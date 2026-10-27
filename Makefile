@@ -1,6 +1,6 @@
 PY ?= python
 
-.PHONY: install data build test eval-retrieval eval sciqa-baseline sciqa-claude examples all
+.PHONY: install data build serve test eval-retrieval eval sciqa-baseline sciqa-claude examples all
 
 install:
 	$(PY) -m pip install -r requirements.txt
@@ -14,6 +14,9 @@ build:
 collect:
 	$(PY) -m sciagent collect --author "Sahar Vahdati"
 	$(PY) -m sciagent build
+
+serve:
+	$(PY) -m sciagent serve
 
 test:
 	$(PY) -m pytest -q

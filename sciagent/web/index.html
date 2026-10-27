@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>sciagent</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet">
+<style>
+:root {
+  --paper: #F2F4F7; --surface: #FFFFFF; --ink: #172031; --graphite: #5A6577; --faint: #8A93A3; --rule: #D9DEE6;
+  --accent: #1F6F68; --accent-soft: #E1EFEC;
+  --ok: #2F7A4E; --ok-soft: #E4F1E8; --warn: #A2560F; --warn-soft: #FBEEDD;
+  --part: #2F5E96; --part-soft: #E5EDF7; --none: #5A6577; --none-soft: #E9ECF1; --bad: #A33A32; --bad-soft: #F8E6E4;
+  --serif: "Newsreader", Georgia, serif; --sans: "IBM Plex Sans", system-ui, sans-serif; --mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #12171F; --surface: #1A212C; --ink: #E6EAF0; --graphite: #A3ACBA; --faint: #77808F; --rule: #2C3542;
+    --accent: #5FB8AE; --accent-soft: #1C3331;
+    --ok: #74C495; --ok-soft: #19301F; --warn: #E4A35E; --warn-soft: #362613; --part: #86AEE0; --part-soft: #182638;
+    --none: #A3ACBA; --none-soft: #232B36; --bad: #E58C84; --bad-soft: #3A1E1C;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--paper); color: var(--ink); }
+body { font: 400 16px/1.6 var(--sans); -webkit-font-smoothing: antialiased; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+
+.top { display: flex; align-items: baseline; justify-content: space-between; gap: 24px; flex-wrap: wrap;
+  padding: 22px clamp(16px, 4vw, 48px); border-bottom: 1px solid var(--rule); }
+.mark { display: inline-block; font: 500 24px/1 var(--serif); letter-spacing: -0.01em; margin: 0; color: var(--ink); text-decoration: none; }
+.mark span { color: var(--accent); }
+.tagline { color: var(--graphite); font-size: 14px; margin: 4px 0 0; }
+.mode { font-size: 13px; color: var(--graphite); display: flex; align-items: center; gap: 8px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
+.dot.on { background: var(--ok); }
+
+.layout { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: clamp(24px, 4vw, 56px);
+  padding: 36px clamp(16px, 4vw, 48px) 80px; max-width: 1280px; margin: 0 auto; }
+@media (max-width: 920px) { .layout { grid-template-columns: 1fr; } }
+
+.ask { display: flex; gap: 12px; align-items: flex-end; border-bottom: 2px solid var(--ink); padding-bottom: 8px; }
+.ask textarea { flex: 1; resize: none; border: 0; background: transparent; color: var(--ink);
+  font: 400 clamp(22px, 2.6vw, 30px)/1.25 var(--serif); padding: 0; min-height: 40px; outline: none; }
+.ask textarea::placeholder { color: var(--faint); }
+.btn { border: 0; background: var(--ink); color: var(--paper); padding: 10px 20px; border-radius: 999px;
+  font-weight: 500; font-size: 15px; cursor: pointer; white-space: nowrap; }
+.btn:disabled { opacity: .45; cursor: default; }
+.hint { color: var(--graphite); font-size: 14px; margin: 12px 0 0; }
+
+.tries { margin: 36px 0 0; max-width: 68ch; }
+.tries ul { list-style: none; margin: 0; padding: 0; }
+.tries p { color: var(--graphite); font-size: 14px; margin: 0 0 8px; }
+.tries button { display: block; width: 100%; text-align: left; background: none; border: 0; border-top: 1px solid var(--rule);
+  padding: 12px 0; font: 400 18px/1.4 var(--serif); cursor: pointer; color: var(--ink); }
+.tries li:last-child button { border-bottom: 1px solid var(--rule); }
+.tries button:hover { color: var(--accent); }
+.tries small { display: block; font: 400 13px/1.4 var(--sans); color: var(--faint); margin-top: 2px; }
+
+.q { font: 500 clamp(26px, 3.2vw, 38px)/1.15 var(--serif); letter-spacing: -0.015em; margin: 40px 0 16px; max-width: 24ch; }
+.verdict { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 24px; }
+.badge { display: inline-flex; align-items: center; gap: 8px; padding: 5px 12px 5px 10px; border-radius: 999px; font-size: 14px; font-weight: 500; }
+.badge::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.b-supported { color: var(--ok); background: var(--ok-soft); }
+.b-conflicting { color: var(--warn); background: var(--warn-soft); }
+.b-partially_supported { color: var(--part); background: var(--part-soft); }
+.b-insufficient { color: var(--none); background: var(--none-soft); }
+.conf { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--graphite); }
+.bar { width: 90px; height: 4px; background: var(--rule); border-radius: 2px; overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--ink); }
+
+.answer { font: 400 19px/1.65 var(--serif); max-width: 66ch; }
+.answer p { margin: 0 0 1em; }
+.cite { font: 500 11px/1 var(--sans); vertical-align: super; margin: 0 1px; padding: 2px 5px; border-radius: 4px;
+  border: 0; background: var(--accent-soft); color: var(--accent); cursor: pointer; }
+.cite:hover, .cite.active { background: var(--accent); color: var(--surface); }
+.nw { white-space: nowrap; }
+.removed { color: var(--bad); font: 500 13px var(--sans); }
+
+.conflicts { margin: 28px 0 0; padding: 18px 20px; border-left: 3px solid var(--warn); background: var(--warn-soft); max-width: 66ch; }
+.conflicts h3, .sources h3 { font: 500 15px/1.3 var(--sans); margin: 0 0 10px; }
+.conflicts ul { margin: 0; padding-left: 18px; font: 400 16px/1.55 var(--serif); }
+.conflicts li + li { margin-top: 8px; }
+
+.sources { margin-top: 36px; max-width: 66ch; }
+.sources ol { margin: 0; padding: 0; list-style: none; counter-reset: s; }
+.sources li { counter-increment: s; display: grid; grid-template-columns: 28px 1fr; gap: 6px; padding: 10px 0; border-top: 1px solid var(--rule); cursor: pointer; }
+.sources li::before { content: counter(s); font: 500 13px var(--sans); color: var(--accent); padding-top: 2px; }
+.sources li:hover .st { color: var(--accent); }
+.st { font: 400 16px/1.4 var(--serif); }
+.ss { font-size: 13px; color: var(--graphite); }
+.notice { margin-top: 24px; font-size: 14px; color: var(--graphite); max-width: 66ch; }
+.err { color: var(--bad); background: var(--bad-soft); padding: 12px 16px; border-radius: 8px; max-width: 66ch; margin-top: 24px; font-size: 15px; }
+
+.hits { list-style: none; margin: 28px 0 0; padding: 0; max-width: 68ch; }
+.hits li { padding: 16px 0; border-top: 1px solid var(--rule); cursor: pointer; }
+.hits li:hover .st { color: var(--accent); }
+.hits p { margin: 6px 0 0; font: 400 16px/1.55 var(--serif); color: var(--graphite); }
+
+.rail h2 { font: 500 15px/1.3 var(--sans); margin: 0 0 4px; }
+.rail .sub { font-size: 13px; color: var(--graphite); margin: 0 0 18px; }
+.panel + .panel { margin-top: 40px; }
+
+.trail { list-style: none; margin: 0; padding: 0; position: relative; }
+.trail li { position: relative; padding: 0 0 18px 28px; }
+.trail li::before { content: ""; position: absolute; left: 6px; top: 16px; bottom: 0; width: 1px; background: var(--rule); }
+.trail li:last-child::before { display: none; }
+.node { position: absolute; left: 0; top: 5px; width: 13px; height: 13px; border-radius: 50%; border: 2px solid var(--accent); background: var(--surface); }
+.trail li.done .node { background: var(--accent); }
+.trail li.guard .node { border-color: var(--bad); background: var(--bad-soft); }
+.trail li.final .node { border-color: var(--ink); background: var(--ink); }
+.trail li.pending .node { animation: pulse 1.1s ease-in-out infinite; }
+@keyframes pulse { 50% { transform: scale(.7); } }
+@media (prefers-reduced-motion: reduce) { .trail li.pending .node { animation: none; } }
+.tl { font-weight: 500; font-size: 15px; }
+.ta { font-size: 13px; color: var(--graphite); word-break: break-word; }
+.tr { font-size: 13px; color: var(--accent); margin-top: 2px; }
+.trail li.guard .tr { color: var(--bad); }
+.trail li.flash { background: var(--accent-soft); border-radius: 6px; }
+
+.viewer { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 18px; }
+.viewer .vt { font: 500 17px/1.3 var(--serif); margin: 0; }
+.viewer .vm { font-size: 13px; color: var(--graphite); margin: 4px 0 12px; }
+.viewer .vx { font: 400 15px/1.6 var(--serif); white-space: pre-wrap; max-height: 360px; overflow: auto; margin: 0; }
+.viewer img { width: 100%; border-radius: 6px; border: 1px solid var(--rule); background: #fff; margin-bottom: 10px; }
+.viewer code { font: 400 12px var(--mono); color: var(--faint); }
+.viewer .card { font-size: 12px; color: var(--warn); margin-top: 10px; }
+.viewer a { color: var(--accent); }
+.papers { list-style: none; margin: 0; padding: 0; }
+.papers li { padding: 9px 0; border-top: 1px solid var(--rule); }
+.papers .st { font-size: 15px; }
+.empty { color: var(--faint); font-size: 14px; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+</style>
+</head>
+<body>
+<header class="top">
+  <div>
+    <a class="mark" href="/" aria-label="sciagent home">sci<span>agent</span></a>
+    <p class="tagline" id="tagline">Answers about knowledge graphs and LLM research, built only from evidence it can cite.</p>
+  </div>
+  <div class="mode"><span class="dot" id="dot"></span><span id="mode">Connecting</span></div>
+</header>
+
+<main class="layout">
+  <section aria-label="Question and answer">
+    <form class="ask" id="form">
+      <label for="q" class="sr">Your question</label>
+      <textarea id="q" rows="1" placeholder="Ask about the papers…"></textarea>
+      <button class="btn" id="go" type="submit">Ask</button>
+    </form>
+    <p class="hint" id="hint">Press Enter to ask. Shift+Enter adds a line.</p>
+    <div id="out">
+      <div class="tries" id="tries"></div>
+    </div>
+  </section>
+
+  <aside class="rail" aria-label="Evidence">
+    <div class="panel" id="trailPanel" hidden>
+      <h2>How the answer was built</h2>
+      <p class="sub">Each step is a tool the agent chose to call.</p>
+      <ol class="trail" id="trail"></ol>
+    </div>
+    <div class="panel" id="viewerPanel" hidden>
+      <h2>Source</h2>
+      <p class="sub">The passage, table or figure behind a citation.</p>
+      <div class="viewer" id="viewer"></div>
+    </div>
+    <div class="panel" id="corpusPanel">
+      <h2>In the corpus</h2>
+      <p class="sub" id="corpusSub"></p>
+      <ul class="papers" id="papers"></ul>
+    </div>
+  </aside>
+</main>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+let status = { has_key: false };
+const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
+let es = null;
+
+const TRIES = [
+  ["Can TransE model symmetric relations?", "Two papers disagree"],
+  ["Is CapsE better than RotatE on FB15k-237?", "The answer depends on the evaluation protocol"],
+  ["In Figure 1 of the leakage report, which dataset has the lowest bars?", "Reads a chart image"],
+  ["Compute the inverse-relation test leakage of WN18RR and explain which relations cause it.", "Runs an analysis on real benchmark data"],
+  ["What MRR does SMART achieve on YAGO3-10?", "Not in the corpus"],
+  ["According to the Open Research Knowledge Graph, which model has the highest Accuracy on the Story Cloze Test?", "Writes and runs a SPARQL query"],
+];
+
+const TOOL = {
+  search_papers: ["Searched the papers", (a) => `“${a.query}”${a.kinds ? " in " + a.kinds.join(", ") : ""}`],
+  read_chunks: ["Read full passages", (a) => (a.chunk_ids || []).join(", ")],
+  list_papers: ["Listed papers", (a) => [a.author && "author " + a.author, a.year_from && "from " + a.year_from].filter(Boolean).join(", ") || "whole corpus"],
+  get_paper_outline: ["Opened a paper's outline", (a) => a.paper_id],
+  inspect_figure: ["Looked at a figure", (a) => a.question || a.chunk_id],
+  run_python: ["Ran Python", (a) => (a.code || "").split("\n")[0].slice(0, 70)],
+  kg_leakage_analysis: ["Ran the leakage analysis", (a) => a.dataset],
+  query_scholarly_kg: ["Queried the ORKG knowledge graph", (a) => a.question],
+  search_external_literature: ["Searched outside the corpus", (a) => `“${a.query}”`],
+};
+
+function summarize(tool, raw) {
+  let o; try { o = JSON.parse(raw); } catch { return ""; }
+  if (o.error) return "Error: " + o.error;
+  if (tool === "search_papers") return o.n ? `${o.n} passages found` : "Nothing relevant found";
+  if (tool === "read_chunks") return `${o.chunks.length} passages read`;
+  if (tool === "list_papers") return `${o.n} papers`;
+  if (tool === "inspect_figure") return o.vision_reading ? "Figure read" : "Caption only";
+  if (tool === "run_python") return o.returncode === 0 ? "Finished" : "Failed";
+  if (tool === "kg_leakage_analysis") return `${o.leakage.test_recoverable_by_rule_pct}% of test triples recoverable, rule MRR ${o.rule_model.MRR}`;
+  if (tool === "query_scholarly_kg") return o.n_answers == null ? "Query could not run" : `${o.n_answers} results`;
+  if (tool === "search_external_literature") return `${o.results.length} papers outside the corpus`;
+  return "Done";
+}
+
+const STATUS = {
+  supported: "Supported by the papers",
+  partially_supported: "Partly supported",
+  conflicting: "The papers disagree",
+  insufficient: "Not enough evidence",
+};
+
+async function init() {
+  status = await (await fetch("/api/status")).json();
+  $("#dot").classList.toggle("on", status.has_key);
+  $("#mode").textContent = status.has_key ? `Answering with ${status.model}` : "Search only. Set ANTHROPIC_API_KEY for answers.";
+  const n = Object.values(status.chunks).reduce((a, b) => a + b, 0);
+  $("#corpusSub").textContent = `${status.papers} papers split into ${plural(n, "passage")}, ${plural(status.chunks.table || 0, "table")} and ${plural(status.chunks.figure || 0, "figure")}.`;
+  if (!status.has_key) $("#go").textContent = "Search";
+  const papers = await (await fetch("/api/papers")).json();
+  $("#papers").innerHTML = papers.map((p) => `<li><div class="st">${esc(p.title)}</div><div class="ss">${esc(p.authors.slice(0, 2).join(", "))}${p.authors.length > 2 ? " and others" : ""}, ${p.year ?? ""}</div></li>`).join("");
+  $("#tries").innerHTML = "<p>Questions that show what it can do</p><ul>" + TRIES.map(([q, why]) =>
+    `<li><button type="button" data-q="${esc(q)}">${esc(q)}<small>${esc(why)}</small></button></li>`).join("") + "</ul>";
+  $("#tries").querySelectorAll("button").forEach((b) => b.onclick = () => { $("#q").value = b.dataset.q; grow(); ask(); });
+}
+
+function grow() { const t = $("#q"); t.style.height = "auto"; t.style.height = t.scrollHeight + "px"; }
+$("#q").addEventListener("input", grow);
+$("#q").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); ask(); } });
+$("#form").addEventListener("submit", (e) => { e.preventDefault(); ask(); });
+
+function ask() {
+  const q = $("#q").value.trim();
+  if (!q) { $("#q").focus(); return; }
+  if (es) es.close();
+  $("#viewerPanel").hidden = true;
+  $("#q").value = ""; $("#q").placeholder = "Ask another question…"; grow();
+  $("#corpusPanel").hidden = true;
+  $("#out").innerHTML = `<h1 class="q">${esc(q)}</h1><div id="body"><p class="notice">${status.has_key ? "Working on it. The steps appear on the right as the agent takes them." : "Searching the passages…"}</p></div>`;
+  status.has_key ? runAgent(q) : runSearch(q);
+}
+
+async function runSearch(q) {
+  $("#trailPanel").hidden = true;
+  const hits = await (await fetch("/api/search?q=" + encodeURIComponent(q))).json();
+  $("#body").innerHTML = hits.length
+    ? `<p class="notice">The most relevant passages. With an API key, the agent reads these and writes a cited answer.</p><ul class="hits">${hits.map((h) =>
+        `<li data-id="${esc(h.id)}"><div class="st">${esc(h.paper_title)}</div><div class="ss">${esc(h.section)}${h.kind !== "text" && h.kind !== (h.section || "").toLowerCase() ? ", " + h.kind : ""}</div><p>${esc(h.text.slice(0, 260))}${h.text.length > 260 ? "…" : ""}</p></li>`).join("")}</ul>`
+    : `<p class="notice">No passage matches. Try naming a model, dataset or paper.</p>`;
+  $("#body").querySelectorAll(".hits li").forEach((li) => li.onclick = () => openSource(li.dataset.id));
+}
+
+function runAgent(q) {
+  $("#go").disabled = true;
+  $("#trailPanel").hidden = false;
+  const trail = $("#trail");
+  trail.innerHTML = "";
+  es = new EventSource("/api/ask?q=" + encodeURIComponent(q));
+  es.onmessage = (m) => {
+    const ev = JSON.parse(m.data);
+    if (ev.type === "tool_call") {
+      const [label, fmt] = TOOL[ev.tool] || [ev.tool, () => ""];
+      trail.insertAdjacentHTML("beforeend", `<li class="pending" data-tool="${esc(ev.tool)}"><span class="node"></span><div class="tl">${esc(label)}</div><div class="ta">${esc(fmt(ev.args || {}))}</div></li>`);
+    } else if (ev.type === "tool_result") {
+      const li = [...trail.querySelectorAll("li.pending")].find((x) => x.dataset.tool === ev.tool);
+      if (li) { li.classList.replace("pending", "done"); li.insertAdjacentHTML("beforeend", `<div class="tr">${esc(summarize(ev.tool, ev.output))}</div>`); }
+    } else if (ev.type === "guardrail") {
+      trail.insertAdjacentHTML("beforeend", `<li class="guard"><span class="node"></span><div class="tl">Answer sent back to the agent</div><div class="tr">${esc(ev.message)}</div></li>`);
+    } else if (ev.type === "final") {
+      es.close(); $("#go").disabled = false;
+      const r = ev.result;
+      trail.insertAdjacentHTML("beforeend", `<li class="final"><span class="node"></span><div class="tl">Answered</div><div class="ta">${r.steps.length} tool calls in ${r.seconds}s</div></li>`);
+      render(r);
+    } else if (ev.type === "error") {
+      es.close(); $("#go").disabled = false;
+      $("#body").innerHTML = `<p class="err">${esc(ev.message)}</p>`;
+    }
+  };
+  es.onerror = () => { if (es.readyState !== 2) { es.close(); $("#go").disabled = false; $("#body").innerHTML = `<p class="err">The connection to the local server dropped. Check the terminal running sciagent serve.</p>`; } };
+}
+
+function render(r) {
+  const order = [];
+  const num = (id) => { let i = order.indexOf(id); if (i < 0) { order.push(id); i = order.length - 1; } return i + 1; };
+  const withCites = (text) => esc(text)
+    .replace(/\s*\[([^\[\]\s]+#[^\[\]\s]+)\]([.,;:)]?)/g, (_, id, p) => `<span class="nw">&#8202;<button class="cite" data-id="${id}" aria-label="Source ${num(id)}">${num(id)}</button>${p}</span>`)
+    .replace(/\[citation removed\]/g, `<span class="removed">[unverified citation removed]</span>`);
+  const paras = (r.answer || "").split(/\n{2,}/).map((p) => `<p>${withCites(p).replace(/\n/g, "<br>")}</p>`).join("");
+  const conflicts = (r.conflicts || []).map((c) => `<li>${withCites(c)}</li>`).join("");
+  (r.citations || []).forEach(num);
+  const pct = Math.round((r.confidence || 0) * 100);
+  const sources = order.map((id) => {
+    const s = r.sources[id] || { paper_title: id, section: "" };
+    return `<li data-id="${esc(id)}"><div><div class="st">${esc(s.paper_title || id)}</div><div class="ss">${esc(s.section || "")}${s.kind && s.kind !== "text" && s.kind !== (s.section || "").toLowerCase() ? ", " + esc(s.kind) : ""}</div></div></li>`;
+  }).join("");
+  $("#body").innerHTML = `
+    <div class="verdict"><span class="badge b-${esc(r.evidence_status)}">${esc(STATUS[r.evidence_status] || r.evidence_status)}</span>
+      <span class="conf">Confidence <span class="bar"><i style="width:${pct}%"></i></span> ${pct}%</span></div>
+    <div class="answer">${paras}</div>
+    ${conflicts ? `<div class="conflicts"><h3>Where the papers disagree</h3><ul>${conflicts}</ul></div>` : ""}
+    ${sources ? `<div class="sources"><h3>Sources</h3><ol>${sources}</ol></div>` : ""}
+    ${r.error ? `<p class="err">${esc(r.error)}</p>` : ""}`;
+  $("#body").querySelectorAll(".cite").forEach((b) => b.onclick = () => openSource(b.dataset.id, b));
+  $("#body").querySelectorAll(".sources li").forEach((li) => li.onclick = () => openSource(li.dataset.id));
+}
+
+async function openSource(id, btn) {
+  document.querySelectorAll(".cite.active").forEach((b) => b.classList.remove("active"));
+  if (btn) document.querySelectorAll(`.cite[data-id="${CSS.escape(id)}"]`).forEach((b) => b.classList.add("active"));
+  const s = await (await fetch("/api/source?id=" + encodeURIComponent(id))).json();
+  const img = s.has_image ? `<img src="/api/figure?id=${encodeURIComponent(id)}" alt="${esc(s.caption || "Figure")}">` : "";
+  const body = s.kind === "table" ? esc(s.text) : esc(s.caption && s.kind === "figure" ? s.caption : s.text);
+  $("#viewer").innerHTML = `<p class="vt">${esc(s.paper_title || id)}</p>
+    <p class="vm">${esc(s.section || "")}${s.year ? ", " + s.year : ""}${s.url ? `, <a href="${esc(s.url)}" target="_blank" rel="noopener">original paper</a>` : ""}</p>
+    ${img}<pre class="vx">${body}</pre>
+    ${s.is_card ? `<p class="card">This record is a structured summary, not the full text.</p>` : ""}
+    <p><code>${esc(id)}</code></p>`;
+  $("#viewerPanel").hidden = false;
+  if (window.innerWidth <= 920) $("#viewerPanel").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+init().catch(() => { $("#mode").textContent = "Server not reachable"; });
+</script>
+</body>
+</html>

@@ -29,12 +29,26 @@ export ANTHROPIC_API_KEY=sk-ant-...          # only needed for the agent / LLM e
 export SCIAGENT_MODEL=claude-sonnet-5-5      # optional; any Claude model with tool use + vision
 
 make build        # download WN18/WN18RR/FB15k-237, run leakage analysis -> report PDF, ingest + index corpus
-make test         # 79 offline tests (fake Claude client), 4 live tests skipped without an API key
+make test         # 83 offline tests (fake Claude client), 4 live tests skipped without an API key
 
+python -m sciagent serve                     # web interface on http://localhost:8000
 python -m sciagent ask "Can TransE model symmetric relations?" -v
 python -m sciagent ask "In Figure 1 of the leakage report, which dataset has the lowest bars?" --json
 python -m sciagent search "ConvKB CapsE random protocol"        # retrieval only, no LLM
 ```
+
+### Web interface
+
+`python -m sciagent serve` (or `make serve`) opens a local page at http://localhost:8000. Type a question and watch the
+agent's tool calls appear on the right as it works; the answer shows a verdict (supported / the papers disagree /
+not enough evidence), numbered citations, and a "where the papers disagree" block. Clicking a citation opens the exact
+passage, table or figure image behind it. Without an API key the page runs in search-only mode and shows the
+retrieved passages. Standard library only, no extra install.
+
+![Answer view](docs/img/web_answer.png)
+
+The screenshot uses a scripted demo run (no API key was available while building); with a key the same page shows
+Claude's real answers. Fonts load from Google Fonts when online.
 
 ### Collect a fresh corpus automatically (needs internet)
 
@@ -73,7 +87,8 @@ sciagent/
   sciqa.py        SciQA NL->SPARQL: example retrieval, kNN baseline, Claude generator, metrics, ORKG execution
   evaluation.py   retrieval + answer metrics, LLM-as-judge
   kg/             benchmark download, leakage analysis + rule baseline, PDF report generation
-  cli.py          python -m sciagent {collect,analyze,build,search,ask}
+  web/            local web interface (stdlib HTTP server + one HTML page, live tool trace via Server-Sent Events)
+  cli.py          python -m sciagent {collect,analyze,build,search,ask,serve}
 evals/            questions.jsonl (27 designed questions), run_eval.py, run_sciqa.py, results/
 tests/            pytest suite (fake Claude client; live tests marked `live`)
 data/seed_corpus/ seed paper cards

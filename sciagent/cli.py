@@ -5,6 +5,7 @@
   build     ingest corpus (PDF text/tables/figures, cards) and build the hybrid index
   search    retrieval only (no LLM) - handy for debugging
   ask       run the Claude agent on a question
+  serve     local web interface on http://localhost:8000
 """
 from __future__ import annotations
 
@@ -82,6 +83,11 @@ def cmd_ask(a):
         print("Guardrails:", r.guardrail_events, r.error or "")
 
 
+def cmd_serve(a):
+    from .web.server import serve
+    serve(DATA, port=a.port, model=a.model)
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="sciagent")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -97,6 +103,8 @@ def main(argv=None):
     s.add_argument("--model", default=os.environ.get("SCIAGENT_MODEL", "claude-sonnet-5-5"))
     s.add_argument("--max-steps", type=int, default=12); s.add_argument("--json", action="store_true")
     s.add_argument("-v", "--verbose", action="store_true"); s.set_defaults(f=cmd_ask)
+    s = sub.add_parser("serve"); s.add_argument("--port", type=int, default=8000)
+    s.add_argument("--model", default=os.environ.get("SCIAGENT_MODEL", "claude-sonnet-5-5")); s.set_defaults(f=cmd_serve)
     a = p.parse_args(argv)
     a.f(a)
 

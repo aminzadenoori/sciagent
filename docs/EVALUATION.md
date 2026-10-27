@@ -2,7 +2,7 @@
 
 Three layers, from cheapest to most expensive:
 
-1. **Unit / integration tests** (`pytest`, 79 offline + 4 live) — deterministic, no API key.
+1. **Unit / integration tests** (`pytest`, 83 offline + 4 live) — deterministic, no API key.
 2. **Retrieval and data-analysis evaluation** — offline, real numbers below.
 3. **Agent and LLM evaluation** — needs `ANTHROPIC_API_KEY`; harness, metrics and question set are ready
    (`make eval`, `make sciqa-claude`). **These were not run in the build sandbox (no API key, no ORKG access), so no
@@ -23,9 +23,10 @@ image-only "scanned" PDF, a missing PDF, and a duplicate record (card vs PDF).
 | `test_analysis.py` (13) | reciprocal augmentation; inverse rules mined; rules *not* mined with too many exceptions; leakage 100% / 0% on constructed splits; rule model perfect on leaky split, chance without; **random tie-breaking expectation = brute force** (6 cases) |
 | `test_sciqa.py` (14) | BLEU identity / disjoint / brevity penalty; ROUGE identity; exact match invariant to whitespace and variable names but not literals; literal F1; answer-set P/R/F1; number normalisation; fence/prefix cleaning; example retrieval returns same template; **kNN baseline substitutes the aligned entity**; HQ/AQ split reporting; **Claude prompt contains k retrieved train examples, temperature 0**; zero-shot has no examples; official split sizes and disjoint ids |
 | `test_collect_eval.py` (10) | arXiv Atom parsing; OpenAlex abstract reconstruction + arXiv id extraction; dedupe merges sources; relevance filter; answer scoring pass / wrong status / trap / fabricated citation; aggregate robustness metrics; retrieval metrics; **gold-coverage check catches bad gold labels**; eval-set schema and category coverage |
+| `test_web.py` (4) | page, status, search, source and figure endpoints; no-key message; **live event stream** start → tool_call → tool_result → final with resolved sources |
 | `test_live.py` (4, `-m live`) | real API: cited supported answer, conflict surfaced, abstention, SciQA 3-shot exact match |
 
-Result in the build sandbox: **79 passed, 4 skipped (live)** in ~3 s.
+Result in the build sandbox: **83 passed, 4 skipped (live)** in ~6 s.
 
 Two real bugs were caught by tests while building: whole-table extraction scrambling decimals, and a test fixture
 whose leakage rate (33% held out) was unrealistic so the 0.9-confidence rule miner correctly refused to mine the rule —

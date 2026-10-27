@@ -112,7 +112,9 @@ class ResearchAgent:
                     raise
                 time.sleep(2 ** attempt * 2)
 
-    def run(self, question: str) -> AgentResult:
+    def run(self, question: str, on_event=None) -> AgentResult:
+        """on_event(dict) is called live with tool_call / tool_result / guardrail events (used by the web UI)."""
+        emit = on_event or (lambda e: None)
         t0 = time.time()
         ctx = ToolContext(self.index, self.data_dir, client=self.client, model=self.model, allow_network=self.allow_network)
         res = AgentResult(question=question)
@@ -142,7 +144,10 @@ class ResearchAgent:
                         final = u_
                         continue
                     ts = time.time()
+                    emit({"type": "tool_call", "tool": u_["name"], "args": u_.get("input", {})})
                     out = call_tool(ctx, u_["name"], u_.get("input", {}))
+                    emit({"type": "tool_result", "tool": u_["name"], "output": out[:4000],
+                          "seconds": round(time.time() - ts, 2)})
                     res.steps.append(Step(u_["name"], u_.get("input", {}), out[:300], round(time.time() - ts, 2)))
                     self.log(f"  -> {u_['name']}({json.dumps(u_.get('input', {}))[:120]})")
                     results.append({"type": "tool_result", "tool_use_id": u_["id"], "content": out})
@@ -153,6 +158,7 @@ class ResearchAgent:
                         citation_retry |= "citation" in problem
                         abstain_retry |= "abstain" in problem
                         res.guardrail_events.append(problem)
+                        emit({"type": "guardrail", "message": problem})
                         results.append({"type": "tool_result", "tool_use_id": final["id"], "is_error": True,
                                         "content": f"Answer rejected: {problem}. Fix it and call submit_answer again."})
                         messages.append({"role": "user", "content": results})
