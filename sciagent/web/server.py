@@ -157,6 +157,8 @@ def make_handler(app: App):
             agent = ResearchAgent(app.index, app.data_dir, model=app.model)
             send({"type": "start"})
             r = agent.run(question, on_event=send, focus_paper=paper)
+            if r.added_papers:
+                app.index = agent.index
             d = r.to_dict()
             d["sources"] = {cid: app.source(cid) for cid in r.citations}
             send({"type": "final", "result": d})

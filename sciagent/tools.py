@@ -30,6 +30,7 @@ class ToolContext:
         self.allow_network = allow_network
         self.seen_chunks: set[str] = set()  # chunk ids returned to the model this session
         self.focus_paper: str | None = None  # when set, paper searches are restricted to this paper
+        self.added_papers: list[str] = []  # papers fetched into the corpus during this run
 
     def _emit(self, hits) -> list[dict]:
         out = []
@@ -154,10 +155,27 @@ def search_external_literature(ctx: ToolContext, query: str, n: int = 8) -> dict
         recs = openalex_search(query, min(int(n), 15))
     except Exception as e:
         return {"error": f"external search failed: {e}"}
-    return {"note": "NOT in the indexed corpus: abstract-level metadata only; use for discovery, not as primary evidence",
+    return {"note": "NOT in the indexed corpus: abstract-level metadata only. To use one as evidence, call fetch_paper "
+                    "with its `fetchable` value, then search it.",
             "results": [{"title": r["title"], "year": r["year"], "authors": r["authors"][:5], "venue": r.get("venue"),
-                         "cited_by": r.get("cited_by"), "id": r["id"], "abstract": (r.get("abstract") or "")[:600]}
+                         "cited_by": r.get("cited_by"), "id": r["id"], "fetchable": r.get("arxiv_id") or r.get("pdf_url"),
+                         "abstract": (r.get("abstract") or "")[:600]}
                         for r in recs]}
+
+
+def fetch_paper(ctx: ToolContext, source: str) -> dict:
+    """Download a paper (arXiv id / URL or PDF link), add it to the corpus and re-index, so it becomes citable."""
+    if not ctx.allow_network:
+        return {"error": "network disabled"}
+    from .library import add_paper
+    try:
+        out = add_paper(source, ctx.data_dir / "corpus", ctx.data_dir / "index")
+    except Exception as e:
+        return {"error": f"could not add {source!r}: {e}"}
+    ctx.index = out.pop("index")
+    ctx.added_papers.append(out["paper_id"])
+    return {"paper_id": out["paper_id"], "title": out["title"], "indexed_parts": out["chunks"],
+            "note": "now in the corpus: use search_papers with paper_ids=[paper_id] to read and cite it"}
 
 
 _SCIQA = {}
@@ -233,6 +251,11 @@ TOOLS: dict[str, tuple[Callable, dict]] = {
                        "with a benchmark. Generates SPARQL with retrieved SciQA examples and executes it. Cite as cite_as.",
         "input_schema": {"type": "object", "properties": {"question": {"type": "string"}, "shots": {"type": "integer"}},
                          "required": ["question"]}}),
+    "fetch_paper": (fetch_paper, {
+        "description": "Download a paper that is NOT yet in the corpus (arXiv id like 2508.16983, arXiv URL, or a direct "
+                       "PDF link, e.g. from search_external_literature), add it to the corpus with its tables and figures, "
+                       "and re-index. Use when the corpus lacks evidence that a specific, identifiable paper would provide.",
+        "input_schema": {"type": "object", "properties": {"source": {"type": "string"}}, "required": ["source"]}}),
     "search_external_literature": (search_external_literature, {
         "description": "Search OpenAlex for papers NOT in the corpus (titles + abstracts). Use when the corpus lacks "
                        "evidence, to tell the user what exists. Results cannot be cited as chunk evidence.",

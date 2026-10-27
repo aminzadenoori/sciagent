@@ -240,6 +240,7 @@ const TOOL = {
   kg_leakage_analysis: ["Ran the leakage analysis", (a) => a.dataset],
   query_scholarly_kg: ["Queried the ORKG knowledge graph", (a) => a.question],
   search_external_literature: ["Searched outside the corpus", (a) => `“${a.query}”`],
+  fetch_paper: ["Added a paper to the corpus", (a) => a.source],
 };
 
 function summarize(tool, raw) {
@@ -253,6 +254,7 @@ function summarize(tool, raw) {
   if (tool === "kg_leakage_analysis") return `${o.leakage.test_recoverable_by_rule_pct}% of test triples recoverable, rule MRR ${o.rule_model.MRR}`;
   if (tool === "query_scholarly_kg") return o.n_answers == null ? "Query could not run" : `${o.n_answers} results`;
   if (tool === "search_external_literature") return `${o.results.length} papers outside the corpus`;
+  if (tool === "fetch_paper") return `${o.title} (${(o.indexed_parts && o.indexed_parts.text) || 0} passages)`;
   return "Done";
 }
 
@@ -389,6 +391,7 @@ function runAgent(q) {
       const r = ev.result;
       trail.insertAdjacentHTML("beforeend", `<li class="final"><span class="node"></span><div class="tl">Answered</div><div class="ta">${r.steps.length} tool calls in ${r.seconds}s</div></li>`);
       render(r);
+      if (r.added_papers && r.added_papers.length) loadPapers();
     } else if (ev.type === "error") {
       es.close(); $("#go").disabled = false;
       $("#body").innerHTML = `<p class="err">${esc(ev.message)}</p>`;

@@ -18,7 +18,8 @@ from pathlib import Path
 
 import pymupdf
 
-from .collect import _get, parse_arxiv_atom
+from . import collect as _collect
+from .collect import parse_arxiv_atom
 
 ARXIV_RE = re.compile(r"(?:arxiv\.org/(?:abs|pdf|html)/)?(\d{4}\.\d{4,5})(?:v\d+)?(?:\.pdf)?$", re.I)
 
@@ -53,7 +54,8 @@ def pdf_title(path: Path) -> tuple[str, list[str], int | None]:
 
 
 def add_paper(source: str, corpus_dir: Path, index_dir: Path, title: str | None = None,
-              fetch=_get, rebuild: bool = True) -> dict:
+              fetch=None, rebuild: bool = True) -> dict:
+    fetch = fetch or _collect._get  # looked up at call time (patchable in tests)
     corpus_dir.mkdir(parents=True, exist_ok=True)
     (corpus_dir / "pdfs").mkdir(exist_ok=True)
     aid = arxiv_id(source)

@@ -48,10 +48,24 @@ flowchart LR
 
 ## 2. Corpus collection (automated)
 
-Seeded by an author (OpenAlex author → works; arXiv `au:` query) plus topic queries, then **one hop along the
-references** of the author's works so the corpus contains the papers she builds on or argues with. A lexical
-relevance filter, dedupe by arXiv id / DOI / normalised title, open-access PDF download with polite rate limiting.
-Any failure degrades to an abstract-only record. Google Scholar is not scraped (robots.txt forbids it).
+`python -m sciagent collect --author "Sahar Vahdati" --topic "..."` (author optional, topics optional, at least one):
+
+1. **Seed** — the author's works (OpenAlex author → works; arXiv `au:` query) and each topic on both arXiv and OpenAlex.
+2. **Expand** — one hop along the references of the author's works, so the papers she builds on or argues with
+   (e.g. RotatE for *Loss-Aware Pattern Inference*) are collected without being named.
+3. **Dedupe** — by arXiv id, DOI and normalised title; records from different sources are merged, keeping the richest fields.
+4. **Filter and rank (no training)** — a paper is kept if it is by the seed author, or matches the topic phrases, or its
+   TF-IDF cosine similarity to the topic descriptions is above a threshold; kept papers are ranked by similarity and
+   capped (`--max-papers`). Each record stores *why* it was kept and its relevance scores.
+5. **Download** — open-access PDFs (arXiv first) with a polite rate limit and retries; a failed download degrades to an
+   abstract-only record instead of aborting.
+6. **Merge and report** — runs are incremental (new papers merged into `collected.jsonl`), and
+   `collect_report.json` records counts per source and stage, PDFs vs abstract-only, and every warning.
+
+Then `python -m sciagent build` ingests and indexes everything. Collection also happens **inside the agent loop**:
+when the corpus lacks evidence, the agent can `search_external_literature` and `fetch_paper` (arXiv id or PDF link),
+which downloads, ingests and re-indexes that paper mid-run so it can be cited. Users can add a single paper from the
+command line (`sciagent add`) or by dropping a PDF on the web page. Google Scholar is not scraped (robots.txt forbids it).
 
 ## 3. Processing and indexing — RAG quality
 

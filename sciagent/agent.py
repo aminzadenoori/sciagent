@@ -40,8 +40,9 @@ not seen. Numbers must match the source exactly; say so when you round.
 - Robustness rules:
   * If papers disagree, do not pick a winner silently: set evidence_status="conflicting", list each side with \
 citations in `conflicts`, and explain what drives the disagreement (e.g. different assumptions, protocols, datasets).
-  * If the corpus does not contain the answer, set evidence_status="insufficient", say what is missing, and do not \
-fill the gap from memory. You may use search_external_literature to point to papers that might answer it.
+  * If the corpus does not contain the answer, use search_external_literature to find a paper that would; if one \
+clearly fits, add it with fetch_paper and search it before answering. Otherwise set evidence_status="insufficient", \
+say what is missing, and do not fill the gap from memory.
   * If the question contains a false premise, correct it with evidence.
   * Some records are structured summaries ("cards") rather than full text; mention this if precision matters.
 - Finish by calling submit_answer exactly once. Be concise."""
@@ -69,6 +70,7 @@ class AgentResult:
     usage: dict = field(default_factory=lambda: {"input_tokens": 0, "output_tokens": 0})
     seconds: float = 0.0
     error: str | None = None
+    added_papers: list = field(default_factory=list)
 
     def to_dict(self):
         return asdict(self)
@@ -181,6 +183,8 @@ class ResearchAgent:
             res.error = f"{type(e).__name__}: {e}"
             res.answer = res.answer or "The agent failed before producing an answer."
         res.seconds = round(time.time() - t0, 2)
+        res.added_papers = list(ctx.added_papers)
+        self.index = ctx.index  # keep papers fetched during this run
         return res
 
     @staticmethod

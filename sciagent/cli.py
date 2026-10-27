@@ -24,11 +24,17 @@ SEED = Path(__file__).resolve().parent.parent / "data" / "seed_corpus" / "cards.
 
 def cmd_collect(a):
     from .collect import CollectConfig, collect
-    cfg = CollectConfig(author=a.author, download_pdfs=not a.no_pdfs, max_per_query=a.max)
+    cfg = CollectConfig(author=a.author or None, download_pdfs=not a.no_pdfs, max_per_query=a.max,
+                        max_papers=a.max_papers)
     if a.topic:
         cfg.topics = a.topic
+    if not cfg.author and not cfg.topics:
+        sys.exit("Give --author and/or at least one --topic.")
     recs = collect(cfg, CORPUS)
-    print(f"collected {len(recs)} papers -> {CORPUS / 'collected.jsonl'}")
+    rep = json.loads((CORPUS / "collect_report.json").read_text())
+    print(f"kept {len(recs)} relevant papers ({rep['with_pdf']} with full PDF, {rep['abstract_only']} abstract only), "
+          f"{rep['new_papers']} new; corpus now has {rep['total_in_corpus']}.")
+    print("Next: python -m sciagent build")
 
 
 def cmd_analyze(a):
@@ -100,7 +106,8 @@ def cmd_serve(a):
 def main(argv=None):
     p = argparse.ArgumentParser(prog="sciagent")
     sub = p.add_subparsers(dest="cmd", required=True)
-    s = sub.add_parser("collect"); s.add_argument("--author", default="Sahar Vahdati")
+    s = sub.add_parser("collect"); s.add_argument("--author", default="Sahar Vahdati", help='"" for topic-only')
+    s.add_argument("--max-papers", type=int, default=80)
     s.add_argument("--topic", action="append"); s.add_argument("--max", type=int, default=25)
     s.add_argument("--no-pdfs", action="store_true"); s.set_defaults(f=cmd_collect)
     s = sub.add_parser("analyze"); s.set_defaults(f=cmd_analyze)

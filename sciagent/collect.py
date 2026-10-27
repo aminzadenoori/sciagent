@@ -31,19 +31,30 @@ ATOM = "{http://www.w3.org/2005/Atom}"
 
 @dataclass
 class CollectConfig:
-    author: str = "Sahar Vahdati"
+    author: str | None = "Sahar Vahdati"  # None/"" = topic-only collection
     topics: list[str] = field(default_factory=lambda: [
         "knowledge graph embedding link prediction",
         "knowledge graph large language model factual accuracy hallucination",
     ])
-    vocabulary: list[str] = field(default_factory=lambda: [
-        "knowledge graph", "embedding", "link prediction", "language model", "llm", "hallucination", "factual",
-        "reasoning", "transe", "rotate", "relation", "entity", "scholarly", "abstraction", "arc"])
+    vocabulary: list[str] | None = None  # None = derived from the topics
     max_per_query: int = 25
     expand_refs: int = 40
     min_relevance: int = 2
+    min_similarity: float = 0.08  # TF-IDF cosine between paper and topics (no training)
+    max_papers: int = 80
     download_pdfs: bool = True
     sleep: float = 3.0  # arXiv asks for >= 3 s between requests
+
+    def vocab(self) -> list[str]:
+        if self.vocabulary:
+            return self.vocabulary
+        stop = {"and", "or", "of", "for", "the", "a", "an", "in", "on", "with", "to", "via", "using"}
+        pairs, words = [], []
+        for t in self.topics:  # topic phrases as adjacent word pairs, e.g. "knowledge graph", "link prediction"
+            toks = [w for w in re.findall(r"[a-z0-9-]+", t.lower()) if w not in stop]
+            pairs += [f"{x} {y}" for x, y in zip(toks, toks[1:])]
+            words += toks
+        return sorted(set(pairs)) or sorted(set(words))
 
 
 def _get(url: str, retries: int = 3, timeout: int = 30) -> bytes:
@@ -165,30 +176,60 @@ def dedupe(recs: list[dict]) -> list[dict]:
     return out
 
 
+def topic_similarity(recs: list[dict], topics: list[str]) -> list[float]:
+    """TF-IDF cosine between each paper (title + abstract) and the topic descriptions. Unsupervised: no training."""
+    if not recs or not topics:
+        return [0.0] * len(recs)
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    docs = [(r.get("title", "") + " " + r.get("abstract", "")) for r in recs]
+    vec = TfidfVectorizer(stop_words="english", ngram_range=(1, 2), sublinear_tf=True).fit(docs + topics)
+    D, T = vec.transform(docs), vec.transform(topics)
+    return (D @ T.T).toarray().max(axis=1).tolist()
+
+
 def collect(cfg: CollectConfig, corpus_dir: Path, log=print) -> list[dict]:
     corpus_dir.mkdir(parents=True, exist_ok=True)
-    recs = []
-    try:
-        seed = openalex_author_works(cfg.author, cfg.max_per_query)
-        for r in seed:
-            r["seed"] = "author"
-        recs += seed
-        log(f"openalex author works: {len(seed)}")
-    except Exception as e:
-        log(f"[warn] OpenAlex author lookup failed: {e}")
-        seed = []
-    last = cfg.author.split()[-1]
-    first = cfg.author.split()[0][0]
-    for q in [f'au:"{last}_{first}"'] + [f'all:"{t}"' if len(t.split()) < 4 else "all:" + " AND all:".join(t.split()[:4])
-                                         for t in cfg.topics]:
+    recs, seed = [], []
+    report = {"author": cfg.author or None, "topics": cfg.topics, "found": {}, "warnings": []}
+
+    def warn(msg):
+        report["warnings"].append(msg)
+        log(f"[warn] {msg}")
+
+    author = (cfg.author or "").strip()
+    if author:
+        try:
+            seed = openalex_author_works(author, cfg.max_per_query)
+            for r in seed:
+                r["seed"] = "author"
+            recs += seed
+            report["found"]["openalex_author"] = len(seed)
+            log(f"openalex author works: {len(seed)}")
+        except Exception as e:
+            warn(f"OpenAlex author lookup failed: {e}")
+    queries = []
+    if author:
+        queries.append(f'au:"{author.split()[-1]}_{author.split()[0][0]}"')
+    queries += [f'all:"{t}"' if len(t.split()) < 4 else "all:" + " AND all:".join(t.split()[:4]) for t in cfg.topics]
+    for t in cfg.topics:  # OpenAlex topic search complements arXiv (journals, conferences)
+        try:
+            got = openalex_search(t, cfg.max_per_query)
+            for r in got:
+                r["seed"] = "topic"
+            recs += got
+            report["found"][f"openalex:{t}"] = len(got)
+        except Exception as e:
+            warn(f"OpenAlex search failed ({t}): {e}")
+    for q in queries:
         try:
             got = arxiv_search(q, cfg.max_per_query)
             for r in got:
                 r["seed"] = "author" if q.startswith("au:") else "topic"
             recs += got
+            report["found"][f"arxiv:{q}"] = len(got)
             log(f"arxiv {q!r}: {len(got)}")
         except Exception as e:
-            log(f"[warn] arXiv query failed ({q}): {e}")
+            warn(f"arXiv query failed ({q}): {e}")
         time.sleep(cfg.sleep)
     # one-hop expansion along references of the author's works
     refs = [x for r in seed for x in r.get("references", [])]
@@ -200,12 +241,26 @@ def collect(cfg: CollectConfig, corpus_dir: Path, log=print) -> list[dict]:
             for r in exp:
                 r["seed"] = "reference"
             recs += exp
+            report["found"]["reference_expansion"] = len(exp)
             log(f"reference expansion: {len(exp)}")
         except Exception as e:
-            log(f"[warn] reference expansion failed: {e}")
+            warn(f"reference expansion failed: {e}")
+    report["raw"] = len(recs)
     recs = dedupe(recs)
-    kept = [r for r in recs if r.get("seed") == "author" and cfg.author.split()[-1] in " ".join(r.get("authors", []))
-            or relevance(r, cfg.vocabulary) >= cfg.min_relevance]
+    report["after_dedupe"] = len(recs)
+    sims = topic_similarity(recs, cfg.topics)
+    vocab = cfg.vocab()
+    last = author.split()[-1] if author else None
+    kept = []
+    for r, sim in zip(recs, sims):
+        r["relevance"] = {"keyword_hits": relevance(r, vocab), "topic_similarity": round(sim, 3)}
+        by_author = bool(last) and r.get("seed") == "author" and last in " ".join(r.get("authors", []))
+        if by_author or r["relevance"]["keyword_hits"] >= cfg.min_relevance or sim >= cfg.min_similarity:
+            r["kept_because"] = "author" if by_author else "topic"
+            kept.append(r)
+    kept.sort(key=lambda r: (r["kept_because"] != "author", -r["relevance"]["topic_similarity"]))
+    kept = kept[:cfg.max_papers]
+    report["after_relevance_filter"] = len(kept)
     log(f"after dedupe: {len(recs)}, after relevance filter: {len(kept)}")
     if cfg.download_pdfs:
         (corpus_dir / "pdfs").mkdir(exist_ok=True)
@@ -221,12 +276,22 @@ def collect(cfg: CollectConfig, corpus_dir: Path, log=print) -> list[dict]:
                     fn.write_bytes(data)
                     time.sleep(cfg.sleep)
                 except Exception as e:
-                    log(f"[warn] PDF download failed for {r['id']}: {e} (keeping abstract only)")
+                    warn(f"PDF download failed for {r['id']}: {e} (keeping abstract only)")
                     continue
             r["pdf"] = str(fn.relative_to(corpus_dir))
+    report["with_pdf"] = sum(1 for r in kept if r.get("pdf"))
+    report["abstract_only"] = len(kept) - report["with_pdf"]
     for r in kept:
         r.pop("references", None)
-    with open(corpus_dir / "collected.jsonl", "w") as f:
-        for r in kept:
+    # incremental: merge with papers collected in earlier runs
+    path = corpus_dir / "collected.jsonl"
+    old = [json.loads(l) for l in open(path)] if path.exists() else []
+    merged = {r["id"]: r for r in old}
+    merged.update({r["id"]: r for r in kept})
+    report["new_papers"] = len(set(r["id"] for r in kept) - set(r["id"] for r in old))
+    report["total_in_corpus"] = len(merged)
+    with open(path, "w") as f:
+        for r in merged.values():
             f.write(json.dumps(r) + "\n")
+    (corpus_dir / "collect_report.json").write_text(json.dumps(report, indent=1))
     return kept

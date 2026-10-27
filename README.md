@@ -29,7 +29,7 @@ export ANTHROPIC_API_KEY=sk-ant-...          # only needed for the agent / LLM e
 export SCIAGENT_MODEL=claude-sonnet-5-5      # optional; any Claude model with tool use + vision
 
 make build        # download WN18/WN18RR/FB15k-237, run leakage analysis -> report PDF, ingest + index corpus
-make test         # 96 offline tests (fake Claude client), 4 live tests skipped without an API key
+make test         # 102 offline tests (fake Claude client), 4 live tests skipped without an API key
 
 python -m sciagent serve                     # web interface on http://localhost:8000
 python -m sciagent ask "Can TransE model symmetric relations?" -v
@@ -63,10 +63,15 @@ are then answered only from that paper, with paper-specific starter questions; "
 ### Collect a fresh corpus automatically (needs internet)
 
 ```bash
-make collect      # OpenAlex author works + arXiv author/topic queries + 1-hop reference expansion,
-                  # relevance filter, dedupe, open-access PDF download, then re-index
-python -m sciagent collect --author "Sahar Vahdati" --topic "knowledge graph embedding link prediction"
+make collect      # = python -m sciagent collect --author "Sahar Vahdati" && python -m sciagent build
+python -m sciagent collect --author "" --topic "graph neural networks drug discovery" --max-papers 50   # topic only
+python -m sciagent build
 ```
+
+Author works + arXiv/OpenAlex topic search + one-hop reference expansion, cross-source dedupe, relevance filtering
+(topic phrases + TF-IDF similarity, no training), open-access PDF download with abstract fallback, incremental merge,
+and a `data/corpus/collect_report.json` audit trail. The agent can also pull in a missing paper by itself mid-question
+(`fetch_paper`).
 
 The repository ships a small **seed corpus** (`data/seed_corpus/cards.jsonl`: structured summaries of 10 papers,
 captured while building, because the build sandbox could not reach arXiv). `make collect` replaces those cards
