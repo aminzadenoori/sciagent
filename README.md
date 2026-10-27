@@ -20,6 +20,136 @@ knowledge graphs + LLMs for factual reliability — including a real published d
 | [docs/EXAMPLES.md](docs/EXAMPLES.md) | Example questions, tool traces and outputs |
 | [docs/AI_USAGE.md](docs/AI_USAGE.md) | How a coding agent (Claude) was used to build this, and what was checked by hand |
 
+## The seven review criteria: what was done and where to look
+
+**Status in one line:** everything below is implemented and covered by 111 offline tests. Retrieval, the SciQA
+baseline and the benchmark-leakage analysis were run on real data. The LLM-based evaluations (agent answers, Claude
+SciQA) are built and wired up but **were not run here** (no API key in the build sandbox); `make eval` and
+`make sciqa-claude` produce them.
+
+### 1. How the agentic system is structured
+
+- **Two agents, each with a clear job.**
+  - `ResearchAgent` (`sciagent/agent.py`) answers the question and judges the evidence. It has 12 tools: paper search,
+    passage reading, paper list and outline, figure reading, Python, the leakage analysis, ORKG querying, outside
+    search, paper download, `research_topic`, and `submit_answer`.
+  - `LiteratureAgent` (`sciagent/subagents.py`) is started through `research_topic` when a topic isn't in the corpus.
+    It searches, screens, downloads and reads papers, then returns cited findings.
+- **The model plans; the code enforces.** Claude picks the tools and their order; there is no fixed pipeline. Code
+  enforces what a model shouldn't police itself:
+  - a step budget, ending in a forced final answer;
+  - a structured final answer (`submit_answer`);
+  - cited passages must have been returned by a tool in this run;
+  - no "insufficient evidence" before searching the corpus, then outside it;
+  - the literature agent has a download cap and its findings must cite passages it read.
+- **Tools fail soft and everything is traced.** Errors go back to the model as messages, and rate limits are
+  retried. Every run records its tool calls, tokens and time, and the web page shows the steps live.
+- **No agent framework.** The loop is written directly on the Anthropic SDK, so each rule is visible and testable
+  with a scripted fake Claude. → [docs/DESIGN.md §1](docs/DESIGN.md), `tests/test_agent.py`, `tests/test_subagent.py`
+
+### 2. How coding/AI agents were used while building it
+
+The repository was built with Claude as a coding agent in a cloud sandbox, steered by short instructions. The topic,
+scope (no training), the SciQA-style testing, the UI, the paper-upload flow and the literature agent were all changes
+of direction given during the session.
+
+The agent probed the environment first (which APIs were reachable), wrote tests before claiming results, and checked
+the UI from screenshots. Tests and screenshots caught real bugs:
+- whole-table PDF extraction scrambling decimals ("0.27" → "027 .");
+- a test stand-in for the downloader being silently ignored;
+- a CSS rule that showed a hidden bar.
+
+Numbers that could not be computed are not reported. → [docs/AI_USAGE.md](docs/AI_USAGE.md)
+
+### 3. Retrieval and RAG quality
+
+- **Section-aware chunking.** Each chunk carries a `[paper title > section]` header.
+- **Hybrid retrieval.** BM25 (exact tokens such as dataset names and numbers) and dense retrieval (paraphrases),
+  combined with reciprocal rank fusion, with a cap of 3 chunks per paper so evidence from several papers surfaces.
+- **Measured on 21 questions with gold evidence:**
+
+  | | Recall@5 | MRR |
+  |---|---|---|
+  | BM25 | 0.95 | 0.81 |
+  | Hybrid | 0.93 | 0.73 |
+
+  On this small corpus, keyword search beats hybrid. That is reported rather than tuned away; the next step is a
+  neural encoder.
+- **Re-chunking-proof gold labels.** Gold evidence is stored as (paper, phrase), so it survives re-chunking, and a
+  check verifies every gold item exists before each run.
+
+→ [docs/EVALUATION.md §3.1](docs/EVALUATION.md), `sciagent/index.py`, `sciagent/ingest.py`
+
+### 4. Multimodal handling
+
+- **Tables** are extracted cell by cell, so numbers stay exact, and indexed as Markdown with their caption.
+- **Figures** are saved as images and linked to their caption, and `inspect_figure` sends the image to Claude vision.
+- **Known ground truth.** The leakage report is a generated PDF with a known chart and table, so figure and table
+  answers can be checked.
+- **Damaged or missing PDFs.** Corrupt, scanned (image-only) and missing PDFs fall back to the abstract and are
+  flagged, never silently lost.
+- **Web viewer.** The source panel shows the actual figure image or table behind a citation.
+
+Limits: there is no OCR for scanned PDFs, and real-paper figures only arrive after `make collect`.
+→ `sciagent/ingest.py`, `tests/test_ingest_index.py`, `tests/test_tools.py`
+
+### 5. Machine-learning fundamentals (no training, by design)
+
+- **Train/test leakage, measured on real benchmarks.** A rule-only model with no learning recovers 93.2% of WN18 test
+  triples and reaches filtered MRR **0.931**. That falls to 0.336 on WN18RR and 0.0007 on FB15k-237. Ranking uses the
+  filtered setting with random tie-breaking, and the expected-rank formula is checked against brute force.
+- **SciQA (NL→SPARQL), done properly:**
+  - **Clean split:** the train split is only a pool of few-shot examples, and its vectoriser never sees test data.
+  - **Leakage audit:** it found **7 test items duplicated in train** in the official split; they are excluded.
+  - **No-LLM baseline:** it gets 74.9% exact match on template questions but **0%** on hand-written ones, so results
+    are always reported per subset.
+  - **Confidence intervals:** bootstrap 95% intervals on the headline metric.
+- **Comparability.** The literature agent records dataset version, task variant, metric averaging and training
+  regime, so incomparable scores are not ranked against each other.
+
+→ `sciagent/kg/analysis.py`, `sciagent/sciqa.py`, [docs/EVALUATION.md §3.2–3.3](docs/EVALUATION.md)
+
+### 6. Evaluation and testing
+
+- **Offline tests (111):** the agent is tested with a scripted fake Claude, so every rule above has a test. Also
+  covered:
+  - ingestion edge cases;
+  - retrieval;
+  - each tool;
+  - the metrics;
+  - the full collection pipeline against simulated arXiv/OpenAlex;
+  - the literature agent;
+  - the web endpoints.
+- **Live tests (4):** these call the real API (`pytest -m live`).
+- **Agent evaluation set (28 questions)**, covering every kind of difficulty:
+  - factual and numeric questions;
+  - table, figure and analysis questions;
+  - multi-hop questions;
+  - real conflicts;
+  - unanswerable questions and a false premise;
+  - a tool failure, a structured KG query and a literature review.
+
+  Metrics: status accuracy, required-fact recall, trap phrases, citation precision and recall, fabricated citations,
+  abstention and conflict-detection rates, and optional LLM-as-judge groundedness.
+- **SciQA runner:** 0/1/3/5-shot, scored by query metrics and by executing answers on ORKG.
+
+→ [docs/EVALUATION.md](docs/EVALUATION.md)
+
+### 7. Robustness to missing or conflicting evidence
+
+- **Disagreement.** Every answer carries a status: supported, partially supported, conflicting or insufficient.
+  Disagreements are listed side by side with citations and the reason for the disagreement. Example: RotatE vs
+  *Loss-Aware Pattern Inference* on TransE and symmetric relations.
+- **Missing evidence.** The agent must search the corpus, then search outside it and fetch a matching paper, before
+  it may say "insufficient", and then it lists the closest candidates instead of answering from memory.
+- **Made-up evidence.** Fabricated citations are rejected, then stripped, and confidence is capped. False premises are
+  corrected (eval q18).
+- **Incomparable numbers.** These are flagged (eval q24, q28), and "highest" is stated as "among the papers found".
+- **Degraded inputs.** Failed downloads, sources being offline, and damaged PDFs all degrade gracefully with
+  warnings.
+
+→ [docs/DESIGN.md §6](docs/DESIGN.md), `tests/test_agent.py`, `tests/test_outside_corpus.py`
+
 ## Quick start
 
 ```bash
