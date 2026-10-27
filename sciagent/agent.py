@@ -40,9 +40,12 @@ not seen. Numbers must match the source exactly; say so when you round.
 - Robustness rules:
   * If papers disagree, do not pick a winner silently: set evidence_status="conflicting", list each side with \
 citations in `conflicts`, and explain what drives the disagreement (e.g. different assumptions, protocols, datasets).
-  * If the corpus does not contain the answer, use search_external_literature to find a paper that would; if one \
-clearly fits, add it with fetch_paper and search it before answering. Otherwise set evidence_status="insufficient", \
-say what is missing, and do not fill the gap from memory.
+  * If the question is about a specific paper that is not in the corpus (check with list_papers or search_papers), \
+or the corpus does not contain the answer: call search_external_literature, pick the result whose title matches \
+(title_match close to 1), add it with fetch_paper, then search_papers with paper_ids=[its paper_id] and answer from \
+it with citations. Say in the answer that the paper was added from outside the corpus. Only if no matching, \
+downloadable paper exists set evidence_status="insufficient", list the closest candidates you found, and do not fill \
+the gap from memory.
   * If the question contains a false premise, correct it with evidence.
   * Some records are structured summaries ("cards") rather than full text; mention this if precision matters.
 - Finish by calling submit_answer exactly once. Be concise."""
@@ -132,7 +135,8 @@ class ResearchAgent:
                        f"restricted to that paper. Answer from it; if it does not contain the answer, say so "
                        f"(evidence_status=insufficient) rather than using other knowledge.\n\nQuestion: {question}")
         messages = [{"role": "user", "content": content}]
-        citation_retry = abstain_retry = False
+        rejected: set[str] = set()  # each kind of guardrail rejection is sent back to the model at most once
+        self._focus = focus_paper
         try:
             for step in range(self.max_steps + 1):
                 force = step == self.max_steps
@@ -167,9 +171,9 @@ class ResearchAgent:
                 if final is not None:
                     ans = final.get("input", {})
                     problem = self._check(ans, ctx, res)
-                    if problem and not (citation_retry and "citation" in problem or abstain_retry and "abstain" in problem):
-                        citation_retry |= "citation" in problem
-                        abstain_retry |= "abstain" in problem
+                    kind = problem.split(" check")[0] if problem else None
+                    if problem and kind not in rejected:
+                        rejected.add(kind)
                         res.guardrail_events.append(problem)
                         emit({"type": "guardrail", "message": problem})
                         results.append({"type": "tool_result", "tool_use_id": final["id"], "is_error": True,
@@ -200,6 +204,11 @@ class ResearchAgent:
             return f"citation check failed: {bad} were never returned by a tool in this session"
         if ans.get("evidence_status") == "insufficient" and not any(s.tool in ("search_papers", "list_papers") for s in res.steps):
             return "abstain check failed: you must search the corpus before concluding the evidence is insufficient"
+        if (ans.get("evidence_status") == "insufficient" and ctx.allow_network and not getattr(self, "_focus", None)
+                and not any(s.tool == "search_external_literature" for s in res.steps)):
+            return ("external check failed: the corpus does not answer this, so search outside it with "
+                    "search_external_literature; if a matching paper is found, add it with fetch_paper and answer from "
+                    "it before concluding the evidence is insufficient")
         if ans.get("evidence_status") in ("supported", "partially_supported", "conflicting") and not self._cited_ids(ans):
             return "citation check failed: a supported answer needs at least one [chunk_id] citation"
         return None

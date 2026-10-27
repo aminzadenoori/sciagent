@@ -148,19 +148,40 @@ def kg_leakage_analysis(ctx: ToolContext, dataset: str, min_conf: float = 0.9) -
 
 
 def search_external_literature(ctx: ToolContext, query: str, n: int = 8) -> dict:
+    """Search arXiv and OpenAlex for papers outside the corpus; best title matches first."""
     if not ctx.allow_network:
         return {"error": "network disabled"}
-    from .collect import openalex_search
+    import difflib
+    import re as _re
+    from .collect import arxiv_search, dedupe, openalex_search
+    n = max(1, min(int(n), 15))
+    recs, errors = [], []
+    words = [w for w in _re.findall(r"[A-Za-z0-9-]+", query) if len(w) > 2][:8]
     try:
-        recs = openalex_search(query, min(int(n), 15))
+        if words:
+            recs += arxiv_search("all:" + " AND all:".join(words), n)
     except Exception as e:
-        return {"error": f"external search failed: {e}"}
+        errors.append(f"arXiv: {e}")
+    try:
+        recs += openalex_search(query, n)
+    except Exception as e:
+        errors.append(f"OpenAlex: {e}")
+    if not recs:
+        return {"error": "external search failed or found nothing" + (f" ({'; '.join(errors)})" if errors else "")}
+    recs = dedupe(recs)
+    in_corpus = set(ctx.index.papers)
+    q = query.lower()
+    for r in recs:
+        r["_match"] = round(difflib.SequenceMatcher(None, q, (r.get("title") or "").lower()).ratio(), 2)
+    recs.sort(key=lambda r: -r["_match"])
     return {"note": "NOT in the indexed corpus: abstract-level metadata only. To use one as evidence, call fetch_paper "
-                    "with its `fetchable` value, then search it.",
-            "results": [{"title": r["title"], "year": r["year"], "authors": r["authors"][:5], "venue": r.get("venue"),
-                         "cited_by": r.get("cited_by"), "id": r["id"], "fetchable": r.get("arxiv_id") or r.get("pdf_url"),
-                         "abstract": (r.get("abstract") or "")[:600]}
-                        for r in recs]}
+                    "with its `fetchable` value, then search it with paper_ids=[the new paper_id].",
+            "errors": errors or None,
+            "results": [{"title": r["title"], "year": r.get("year"), "authors": (r.get("authors") or [])[:5],
+                         "venue": r.get("venue"), "title_match": r["_match"], "id": r["id"],
+                         "already_in_corpus": r["id"] in in_corpus,
+                         "fetchable": r.get("arxiv_id") or r.get("pdf_url"),
+                         "abstract": (r.get("abstract") or "")[:500]} for r in recs[:n]]}
 
 
 def fetch_paper(ctx: ToolContext, source: str) -> dict:

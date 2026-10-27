@@ -37,7 +37,10 @@ flowchart LR
 - **Citation provenance.** Every tool that returns evidence registers the `chunk_id`s it showed the model. A final
   answer citing anything else is rejected with an error tool-result (one self-correction), then stripped and
   downgraded if it persists. This turns fabricated citations from a silent failure into a counted event.
-- **Look before abstaining.** An `insufficient` answer with no prior search is rejected once.
+- **Look before abstaining, then look outside.** An `insufficient` answer with no corpus search is rejected; with
+  network access, one that never searched outside the corpus is rejected too, so a question about a paper that is not
+  in the corpus makes the agent find it on arXiv/OpenAlex, fetch it and answer from it. Each kind of rejection is sent
+  back once.
 - **Tools fail soft.** Tool exceptions, bad arguments, unknown tools and network failures come back to the model as
   JSON errors so it can recover; API rate limits are retried with back-off; any other API failure is captured in the
   result instead of crashing an eval run.
@@ -114,7 +117,7 @@ bootstrap confidence intervals.
 | Situation | Mechanism | Tested by |
 |---|---|---|
 | Papers disagree | `evidence_status="conflicting"` + `conflicts` list; prompt requires naming what drives the disagreement | eval q08, q09, q20, q24; test_agent conflicts test |
-| Answer not in corpus | must search first, then `insufficient`; may point to external papers without citing them as evidence | eval q15–q17; agent abstain test |
+| Paper / answer not in corpus | must search the corpus, then **must search outside it** (arXiv + OpenAlex, best title match first); if a matching paper is downloadable it is fetched, indexed and cited; only then `insufficient`, listing the closest candidates | eval q15–q17; `test_outside_corpus.py` |
 | False premise | prompt rule + eval category | eval q18 |
 | Tool cannot do it | errors returned to model | eval q26; tool-error test |
 | Fabricated citation | seen-chunk check, retry, strip + downgrade | 3 agent tests |

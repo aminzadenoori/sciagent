@@ -386,7 +386,11 @@ function runAgent(q) {
       const li = [...trail.querySelectorAll("li.pending")].find((x) => x.dataset.tool === ev.tool);
       if (li) { li.classList.replace("pending", "done"); li.insertAdjacentHTML("beforeend", `<div class="tr">${esc(summarize(ev.tool, ev.output))}</div>`); }
     } else if (ev.type === "guardrail") {
-      trail.insertAdjacentHTML("beforeend", `<li class="guard"><span class="node"></span><div class="tl">Answer sent back to the agent</div><div class="tr">${esc(ev.message)}</div></li>`);
+      const why = ev.message.startsWith("external check") ? "Not found in the corpus, so the agent was told to look outside it"
+        : ev.message.startsWith("abstain check") ? "The agent tried to give up without searching, so it was told to search first"
+        : ev.message.startsWith("citation check") ? "A citation was not backed by retrieved evidence, so the agent was told to fix it"
+        : ev.message;
+      trail.insertAdjacentHTML("beforeend", `<li class="guard"><span class="node"></span><div class="tl">Answer sent back to the agent</div><div class="tr">${esc(why)}</div></li>`);
     } else if (ev.type === "final") {
       es.close(); $("#go").disabled = false;
       const r = ev.result;

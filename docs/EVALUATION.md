@@ -2,7 +2,7 @@
 
 Three layers, from cheapest to most expensive:
 
-1. **Unit / integration tests** (`pytest`, 102 offline + 4 live) — deterministic, no API key.
+1. **Unit / integration tests** (`pytest`, 106 offline + 4 live) — deterministic, no API key.
 2. **Retrieval and data-analysis evaluation** — offline, real numbers below.
 3. **Agent and LLM evaluation** — needs `ANTHROPIC_API_KEY`; harness, metrics and question set are ready
    (`make eval`, `make sciqa-claude`). **These were not run in the build sandbox (no API key, no ORKG access), so no
@@ -26,9 +26,10 @@ image-only "scanned" PDF, a missing PDF, and a duplicate record (card vs PDF).
 | `test_web.py` (4) | page, status, search, source and figure endpoints; no-key message; **live event stream** start → tool_call → tool_result → final with resolved sources |
 | `test_library.py` (13) | arXiv id parsing (6 forms); PDF title extraction; **adding a local PDF indexes its text, table and figure**; re-adding replaces instead of duplicating; arXiv add uses API metadata; non-PDF and missing file rejected; **focus restricts search to one paper**; focused agent prompt; unknown paper; web upload + focused search; non-PDF upload rejected |
 | `test_collect_pipeline.py` (6) | **whole collection pipeline on simulated arXiv/OpenAlex**: author seed + topic search + reference expansion, cross-source merge, off-topic papers dropped from every source, author papers kept even off-vocabulary, failed PDF → abstract-only, report counts, collected papers ingested with figures; topic-only mode; incremental re-runs add nothing twice; all sources down → empty result + warnings, no crash; **agent `fetch_paper` adds a missing paper mid-run** |
+| `test_outside_corpus.py` (4) | external search merges arXiv + OpenAlex and ranks the exact title first; **agent that gives up on a paper missing from the corpus is sent back, searches outside, fetches the paper, searches it and answers with valid citations**; abstaining after an outside search is accepted; no outside search required offline or when the user pinned one paper |
 | `test_live.py` (4, `-m live`) | real API: cited supported answer, conflict surfaced, abstention, SciQA 3-shot exact match |
 
-Result in the build sandbox: **102 passed, 4 skipped (live)** in ~11 s.
+Result in the build sandbox: **106 passed, 4 skipped (live)** in ~12 s.
 
 Two real bugs were caught by tests while building: whole-table extraction scrambling decimals, and a test fixture
 whose leakage rate (33% held out) was unrealistic so the 0.9-confidence rule miner correctly refused to mine the rule —

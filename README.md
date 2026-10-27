@@ -29,7 +29,7 @@ export ANTHROPIC_API_KEY=sk-ant-...          # only needed for the agent / LLM e
 export SCIAGENT_MODEL=claude-sonnet-5-5      # optional; any Claude model with tool use + vision
 
 make build        # download WN18/WN18RR/FB15k-237, run leakage analysis -> report PDF, ingest + index corpus
-make test         # 102 offline tests (fake Claude client), 4 live tests skipped without an API key
+make test         # 106 offline tests (fake Claude client), 4 live tests skipped without an API key
 
 python -m sciagent serve                     # web interface on http://localhost:8000
 python -m sciagent ask "Can TransE model symmetric relations?" -v
