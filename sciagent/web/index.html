@@ -247,15 +247,15 @@ const TOOL = {
 function summarize(tool, raw) {
   let o; try { o = JSON.parse(raw); } catch { return ""; }
   if (o.error) return "Error: " + o.error;
-  if (tool === "search_papers") return o.n ? `${o.n} passages found` : "Nothing relevant found";
-  if (tool === "read_chunks") return `${o.chunks.length} passages read`;
-  if (tool === "list_papers") return `${o.n} papers`;
+  if (tool === "search_papers") return o.n ? `${plural(o.n, "passage")} found` : "Nothing relevant found";
+  if (tool === "read_chunks") return `${plural(o.chunks.length, "passage")} read`;
+  if (tool === "list_papers") return plural(o.n, "paper");
   if (tool === "inspect_figure") return o.vision_reading ? "Figure read" : "Caption only";
   if (tool === "run_python") return o.returncode === 0 ? "Finished" : "Failed";
   if (tool === "kg_leakage_analysis") return `${o.leakage.test_recoverable_by_rule_pct}% of test triples recoverable, rule MRR ${o.rule_model.MRR}`;
   if (tool === "query_scholarly_kg") return o.n_answers == null ? "Query could not run" : `${o.n_answers} results`;
-  if (tool === "search_external_literature") return `${o.results.length} papers outside the corpus`;
-  if (tool === "fetch_paper") return `${o.title} (${(o.indexed_parts && o.indexed_parts.text) || 0} passages)`;
+  if (tool === "search_external_literature") return `${plural(o.results.length, "paper")} found outside the corpus`;
+  if (tool === "fetch_paper") return `${o.title} (${plural((o.indexed_parts && o.indexed_parts.text) || 0, "passage")})`;
   return "Done";
 }
 
@@ -394,7 +394,7 @@ function runAgent(q) {
     } else if (ev.type === "final") {
       es.close(); $("#go").disabled = false;
       const r = ev.result;
-      trail.insertAdjacentHTML("beforeend", `<li class="final"><span class="node"></span><div class="tl">Answered</div><div class="ta">${r.steps.length} tool calls in ${r.seconds}s</div></li>`);
+      trail.insertAdjacentHTML("beforeend", `<li class="final"><span class="node"></span><div class="tl">Answered</div><div class="ta">${plural(r.steps.length, "tool call")} in ${r.seconds}s</div></li>`);
       render(r);
       if (r.added_papers && r.added_papers.length) loadPapers();
     } else if (ev.type === "error") {
