@@ -2,7 +2,7 @@
 
 Three layers, from cheapest to most expensive:
 
-1. **Unit / integration tests** (`pytest`, 111 offline + 4 live) — deterministic, no API key.
+1. **Unit / integration tests** (`pytest`, 112 offline + 4 live) — deterministic, no API key.
 2. **Retrieval and data-analysis evaluation** — offline, real numbers below.
 3. **Agent and LLM evaluation** — needs `ANTHROPIC_API_KEY`; harness, metrics and question set are ready
    (`make eval`, `make sciqa-claude`). **These were not run in the build sandbox (no API key, no ORKG access), so no
@@ -28,9 +28,10 @@ image-only "scanned" PDF, a missing PDF, and a duplicate record (card vs PDF).
 | `test_collect_pipeline.py` (6) | **whole collection pipeline on simulated arXiv/OpenAlex**: author seed + topic search + reference expansion, cross-source merge, off-topic papers dropped from every source, author papers kept even off-vocabulary, failed PDF → abstract-only, report counts, collected papers ingested with figures; topic-only mode; incremental re-runs add nothing twice; all sources down → empty result + warnings, no crash; **agent `fetch_paper` adds a missing paper mid-run** |
 | `test_outside_corpus.py` (4) | external search merges arXiv + OpenAlex and ranks the exact title first; **agent that gives up on a paper missing from the corpus is sent back, searches outside, fetches the paper, searches it and answers with valid citations**; abstaining after an outside search is accepted; no outside search required offline or when the user pinned one paper |
 | `test_subagent.py` (5) | `research_topic` offered to the main agent; **main agent starts the literature agent, which searches outside, downloads papers within its cap, reads their result tables and returns findings the main agent cites**; findings citing unread chunks are dropped; download budget enforced; literature agent must search outside before submitting; offline / no-LLM errors |
+| `test_eval_harness.py` (1) | **the agent evaluation runs end to end** (retrieval → agent runs → scores → judge → report) with a naive stand-in model that always says "supported"; the harness gives it 0% pass, 0% abstention and 0% conflict detection, i.e. it does not reward naive answers |
 | `test_live.py` (4, `-m live`) | real API: cited supported answer, conflict surfaced, abstention, SciQA 3-shot exact match |
 
-Result in the build sandbox: **111 passed, 4 skipped (live)** in ~16 s.
+Result in the build sandbox: **112 passed, 4 skipped (live)** in ~17 s.
 
 Two real bugs were caught by tests while building: whole-table extraction scrambling decimals, and a test fixture
 whose leakage rate (33% held out) was unrealistic so the 0.9-confidence rule miner correctly refused to mine the rule —

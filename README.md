@@ -25,7 +25,7 @@ the train split is only a pool of retrieved few-shot examples. See
 
 ## The seven review criteria: what was done and where to look
 
-**Status in one line:** everything below is implemented and covered by 111 offline tests. Retrieval, the SciQA
+**Status in one line:** everything below is implemented and covered by 112 offline tests. Retrieval, the SciQA
 baseline and the benchmark-leakage analysis were run on real data. The LLM-based evaluations (agent answers, Claude
 SciQA) are built and wired up but **were not run here** (no API key in the build sandbox); `make eval` and
 `make sciqa-claude` produce them.
@@ -114,7 +114,7 @@ Limits: there is no OCR for scanned PDFs, and real-paper figures only arrive aft
 
 ### 6. Evaluation and testing
 
-- **Offline tests (111):** the agent is tested with a scripted fake Claude, so every rule above has a test. Also
+- **Offline tests (112):** the agent is tested with a scripted fake Claude, so every rule above has a test. Also
   covered:
   - ingestion edge cases;
   - retrieval;
@@ -122,7 +122,8 @@ Limits: there is no OCR for scanned PDFs, and real-paper figures only arrive aft
   - the metrics;
   - the full collection pipeline against simulated arXiv/OpenAlex;
   - the literature agent;
-  - the web endpoints.
+  - the web endpoints;
+  - the evaluation harness itself, run end to end with a naive stand-in model that it correctly scores 0%.
 - **Live tests (4):** these call the real API (`pytest -m live`).
 - **Agent evaluation set (28 questions)**, covering every kind of difficulty:
   - factual and numeric questions;
@@ -212,7 +213,7 @@ export ANTHROPIC_API_KEY=sk-ant-...          # only needed for the agent / LLM e
 export SCIAGENT_MODEL=claude-sonnet-5-5      # optional; any Claude model with tool use + vision
 
 make build        # download WN18/WN18RR/FB15k-237, run leakage analysis -> report PDF, ingest + index corpus
-make test         # 111 offline tests (fake Claude client), 4 live tests skipped without an API key
+make test         # 112 offline tests (fake Claude client), 4 live tests skipped without an API key
 
 python -m sciagent serve                     # web interface on http://localhost:8000
 python -m sciagent ask "Can TransE model symmetric relations?" -v

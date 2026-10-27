@@ -31,7 +31,7 @@ what was verified rather than trusted.
 
 ## What was verified, not trusted
 
-- **Tests before claims.** 111 offline tests now. Real bugs they or screenshot checks surfaced: table decimals
+- **Tests before claims.** 112 offline tests now. Real bugs they or screenshot checks surfaced: table decimals
   scrambled by whole-table extraction ("0.27" → "027 ."); an unrealistic test fixture for rule mining; the PDF
   downloader bound at import time so a test stand-in was silently ignored; a CSS rule that displayed a hidden
   "answering only from" bar; "1 papers"-style labels.
