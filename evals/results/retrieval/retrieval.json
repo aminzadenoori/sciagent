@@ -1,0 +1,236 @@
+{
+ "bm25": {
+  "recall@1": 0.667,
+  "recall@3": 0.881,
+  "recall@5": 0.952,
+  "recall@10": 0.976,
+  "all_gold@1": 0.619,
+  "all_gold@3": 0.81,
+  "all_gold@5": 0.905,
+  "all_gold@10": 0.952,
+  "MRR": 0.813,
+  "nDCG@10": 0.94,
+  "n_questions": 21,
+  "per_question": {
+   "q01": {
+    "first_relevant_rank": 1
+   },
+   "q02": {
+    "first_relevant_rank": 1
+   },
+   "q03": {
+    "first_relevant_rank": 1
+   },
+   "q04": {
+    "first_relevant_rank": 1
+   },
+   "q05": {
+    "first_relevant_rank": 2
+   },
+   "q06": {
+    "first_relevant_rank": 1
+   },
+   "q07": {
+    "first_relevant_rank": 1
+   },
+   "q08": {
+    "first_relevant_rank": 1
+   },
+   "q09": {
+    "first_relevant_rank": 1
+   },
+   "q10": {
+    "first_relevant_rank": 3
+   },
+   "q11": {
+    "first_relevant_rank": 1
+   },
+   "q12": {
+    "first_relevant_rank": 3
+   },
+   "q13": {
+    "first_relevant_rank": 1
+   },
+   "q14": {
+    "first_relevant_rank": 1
+   },
+   "q18": {
+    "first_relevant_rank": 1
+   },
+   "q19": {
+    "first_relevant_rank": 1
+   },
+   "q20": {
+    "first_relevant_rank": 4
+   },
+   "q22": {
+    "first_relevant_rank": 1
+   },
+   "q23": {
+    "first_relevant_rank": 3
+   },
+   "q24": {
+    "first_relevant_rank": 3
+   },
+   "q25": {
+    "first_relevant_rank": 1
+   }
+  }
+ },
+ "dense": {
+  "recall@1": 0.452,
+  "recall@3": 0.762,
+  "recall@5": 0.929,
+  "recall@10": 0.976,
+  "all_gold@1": 0.429,
+  "all_gold@3": 0.714,
+  "all_gold@5": 0.857,
+  "all_gold@10": 0.952,
+  "MRR": 0.672,
+  "nDCG@10": 0.833,
+  "n_questions": 21,
+  "per_question": {
+   "q01": {
+    "first_relevant_rank": 1
+   },
+   "q02": {
+    "first_relevant_rank": 1
+   },
+   "q03": {
+    "first_relevant_rank": 1
+   },
+   "q04": {
+    "first_relevant_rank": 1
+   },
+   "q05": {
+    "first_relevant_rank": 3
+   },
+   "q06": {
+    "first_relevant_rank": 1
+   },
+   "q07": {
+    "first_relevant_rank": 2
+   },
+   "q08": {
+    "first_relevant_rank": 3
+   },
+   "q09": {
+    "first_relevant_rank": 1
+   },
+   "q10": {
+    "first_relevant_rank": 4
+   },
+   "q11": {
+    "first_relevant_rank": 1
+   },
+   "q12": {
+    "first_relevant_rank": 5
+   },
+   "q13": {
+    "first_relevant_rank": 1
+   },
+   "q14": {
+    "first_relevant_rank": 2
+   },
+   "q18": {
+    "first_relevant_rank": 2
+   },
+   "q19": {
+    "first_relevant_rank": 1
+   },
+   "q20": {
+    "first_relevant_rank": 4
+   },
+   "q22": {
+    "first_relevant_rank": 2
+   },
+   "q23": {
+    "first_relevant_rank": 2
+   },
+   "q24": {
+    "first_relevant_rank": 4
+   },
+   "q25": {
+    "first_relevant_rank": 1
+   }
+  }
+ },
+ "hybrid": {
+  "recall@1": 0.548,
+  "recall@3": 0.81,
+  "recall@5": 0.929,
+  "recall@10": 0.976,
+  "all_gold@1": 0.524,
+  "all_gold@3": 0.762,
+  "all_gold@5": 0.857,
+  "all_gold@10": 0.952,
+  "MRR": 0.734,
+  "nDCG@10": 0.886,
+  "n_questions": 21,
+  "per_question": {
+   "q01": {
+    "first_relevant_rank": 1
+   },
+   "q02": {
+    "first_relevant_rank": 1
+   },
+   "q03": {
+    "first_relevant_rank": 1
+   },
+   "q04": {
+    "first_relevant_rank": 1
+   },
+   "q05": {
+    "first_relevant_rank": 3
+   },
+   "q06": {
+    "first_relevant_rank": 1
+   },
+   "q07": {
+    "first_relevant_rank": 2
+   },
+   "q08": {
+    "first_relevant_rank": 2
+   },
+   "q09": {
+    "first_relevant_rank": 1
+   },
+   "q10": {
+    "first_relevant_rank": 4
+   },
+   "q11": {
+    "first_relevant_rank": 1
+   },
+   "q12": {
+    "first_relevant_rank": 3
+   },
+   "q13": {
+    "first_relevant_rank": 1
+   },
+   "q14": {
+    "first_relevant_rank": 1
+   },
+   "q18": {
+    "first_relevant_rank": 1
+   },
+   "q19": {
+    "first_relevant_rank": 1
+   },
+   "q20": {
+    "first_relevant_rank": 4
+   },
+   "q22": {
+    "first_relevant_rank": 2
+   },
+   "q23": {
+    "first_relevant_rank": 2
+   },
+   "q24": {
+    "first_relevant_rank": 4
+   },
+   "q25": {
+    "first_relevant_rank": 1
+   }
+  }
+ }
+}

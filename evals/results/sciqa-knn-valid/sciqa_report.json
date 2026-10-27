@@ -1,0 +1,51 @@
+{
+ "split": "valid",
+ "n": 254,
+ "leaked_excluded": [
+  "AQ0996",
+  "AQ1093",
+  "AQ0654"
+ ],
+ "example_retrieval": {
+  "template_hit@1": 80.5,
+  "template_hit@3": 93.36,
+  "template_hit@5": 98.76,
+  "n": 241
+ },
+ "runs": {
+  "knn-template": {
+   "all": {
+    "n": 254,
+    "BLEU-4": 87.12,
+    "ROUGE-1": 92.03,
+    "ROUGE-2": 89.15,
+    "ROUGE-L": 91.58,
+    "exact_match": 71.65,
+    "literal_F1": 90.35,
+    "exact_match_95CI": [
+     66.54,
+     76.77
+    ]
+   },
+   "handcrafted": {
+    "n": 13,
+    "BLEU-4": 26.9,
+    "ROUGE-1": 51.07,
+    "ROUGE-2": 29.35,
+    "ROUGE-L": 46.33,
+    "exact_match": 0.0,
+    "literal_F1": 5.13
+   },
+   "template_generated": {
+    "n": 241,
+    "BLEU-4": 89.57,
+    "ROUGE-1": 94.24,
+    "ROUGE-2": 92.37,
+    "ROUGE-L": 94.02,
+    "exact_match": 75.52,
+    "literal_F1": 94.95
+   },
+   "seconds": 0.8
+  }
+ }
+}
