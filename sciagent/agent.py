@@ -112,13 +112,24 @@ class ResearchAgent:
                     raise
                 time.sleep(2 ** attempt * 2)
 
-    def run(self, question: str, on_event=None) -> AgentResult:
+    def run(self, question: str, on_event=None, focus_paper: str | None = None) -> AgentResult:
         """on_event(dict) is called live with tool_call / tool_result / guardrail events (used by the web UI)."""
         emit = on_event or (lambda e: None)
         t0 = time.time()
         ctx = ToolContext(self.index, self.data_dir, client=self.client, model=self.model, allow_network=self.allow_network)
         res = AgentResult(question=question)
-        messages = [{"role": "user", "content": question}]
+        content = question
+        if focus_paper:
+            p = self.index.papers.get(focus_paper)
+            if p is None:
+                res.error = f"unknown paper {focus_paper!r}"
+                res.answer = "That paper is not in the corpus."
+                return res
+            ctx.focus_paper = focus_paper
+            content = (f'This question is about the paper "{p["title"]}" (paper_id {focus_paper}). search_papers is '
+                       f"restricted to that paper. Answer from it; if it does not contain the answer, say so "
+                       f"(evidence_status=insufficient) rather than using other knowledge.\n\nQuestion: {question}")
+        messages = [{"role": "user", "content": content}]
         citation_retry = abstain_retry = False
         try:
             for step in range(self.max_steps + 1):

@@ -76,12 +76,14 @@ def make_handler(app: App):
                     self._json({"papers": len(app.index.papers), "chunks": kinds, "model": app.model,
                                 "has_key": app.has_key()})
                 elif u.path == "/api/papers":
-                    rows = sorted(({"id": p["id"], "title": p["title"], "year": p.get("year"),
+                    rows = sorted(({"id": p["id"], "title": p["title"], "year": p.get("year"), "added": p.get("source") == "added",
                                     "authors": p.get("authors", [])[:4]} for p in app.index.papers.values()),
-                                  key=lambda r: -(r["year"] or 0))
+                                  key=lambda r: (not r["added"], -(r["year"] or 0)))
                     self._json(rows)
                 elif u.path == "/api/search":
-                    hits = app.index.search(q.get("q", ""), k=int(q.get("k", 8)))
+                    pid = q.get("paper")
+                    hits = app.index.search(q.get("q", ""), k=int(q.get("k", 8)), paper_ids=[pid] if pid else None,
+                                            per_paper=8 if pid else 3)
                     self._json([{**app.source(h.chunk_id), "score": round(h.score, 4)} for h in hits])
                 elif u.path == "/api/source":
                     self._json(app.source(q.get("id", "")))
@@ -97,7 +99,7 @@ def make_handler(app: App):
                     self.end_headers()
                     self.wfile.write(body)
                 elif u.path == "/api/ask":
-                    self._ask(q.get("q", "").strip())
+                    self._ask(q.get("q", "").strip(), q.get("paper") or None)
                 else:
                     self._json({"error": "not found"}, 404)
             except BrokenPipeError:
@@ -109,7 +111,35 @@ def make_handler(app: App):
                 except Exception:
                     pass
 
-        def _ask(self, question: str):
+        def do_POST(self):
+            """Add a paper: /api/upload (raw PDF body, X-Filename header) or /api/add (JSON {"source": ...})."""
+            from ..library import add_paper, copy_upload
+            u = urlparse(self.path)
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+                if n > 60 * 1024 * 1024:
+                    return self._json({"error": "PDF is larger than 60 MB."}, 413)
+                body = self.rfile.read(n)
+                if u.path == "/api/upload":
+                    if not body.startswith(b"%PDF"):
+                        return self._json({"error": "That file is not a PDF."}, 400)
+                    source = str(copy_upload(body, self.headers.get("X-Filename", "upload.pdf"), app.data_dir / "uploads"))
+                elif u.path == "/api/add":
+                    source = (json.loads(body or b"{}").get("source") or "").strip()
+                    from ..library import arxiv_id
+                    # only arXiv ids / URLs from the browser, never paths on the server
+                    if not source or Path(source).exists() or not (arxiv_id(source) or re.match(r"https?://", source)):
+                        return self._json({"error": "Enter an arXiv id (like 2508.16983) or a link to a PDF."}, 400)
+                else:
+                    return self._json({"error": "not found"}, 404)
+                with app.lock:
+                    out = add_paper(source, app.data_dir / "corpus", app.data_dir / "index")
+                    app.index = out.pop("index")
+                self._json(out)
+            except Exception as e:
+                self._json({"error": f"Could not add the paper: {e}"}, 400)
+
+        def _ask(self, question: str, paper: str | None = None):
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Cache-Control", "no-cache")
@@ -126,7 +156,7 @@ def make_handler(app: App):
             from ..agent import ResearchAgent
             agent = ResearchAgent(app.index, app.data_dir, model=app.model)
             send({"type": "start"})
-            r = agent.run(question, on_event=send)
+            r = agent.run(question, on_event=send, focus_paper=paper)
             d = r.to_dict()
             d["sources"] = {cid: app.source(cid) for cid in r.citations}
             send({"type": "final", "result": d})

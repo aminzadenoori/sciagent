@@ -141,3 +141,11 @@ class FakeClient:
 @pytest.fixture
 def fake():
     return SimpleNamespace(Client=FakeClient, tool_use=tool_use, text=text, response=response)
+
+
+ATOM_ONE = b"""<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom"><entry>
+  <id>http://arxiv.org/abs/2508.16983v2</id><published>2025-08-23T10:00:00Z</published>
+  <title>ReFactX: Scalable Reasoning with Reliable Facts via Constrained Generation</title>
+  <summary>Abstract.</summary><author><name>Riccardo Pozzi</name></author><author><name>Sahar Vahdati</name></author>
+</entry></feed>"""

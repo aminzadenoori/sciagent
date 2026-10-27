@@ -29,6 +29,7 @@ class ToolContext:
         self.model = model
         self.allow_network = allow_network
         self.seen_chunks: set[str] = set()  # chunk ids returned to the model this session
+        self.focus_paper: str | None = None  # when set, paper searches are restricted to this paper
 
     def _emit(self, hits) -> list[dict]:
         out = []
@@ -45,7 +46,9 @@ class ToolContext:
 def search_papers(ctx: ToolContext, query: str, k: int = 6, kinds: list[str] | None = None,
                   paper_ids: list[str] | None = None) -> dict:
     k = max(1, min(int(k), 15))
-    hits = ctx.index.search(query, k=k, kinds=kinds, paper_ids=paper_ids)
+    if ctx.focus_paper and not paper_ids:
+        paper_ids = [ctx.focus_paper]
+    hits = ctx.index.search(query, k=k, kinds=kinds, paper_ids=paper_ids, per_paper=k if paper_ids and len(paper_ids) == 1 else 3)
     return {"query": query, "n": len(hits), "results": ctx._emit(hits),
             "note": None if hits else "No matching evidence in the indexed corpus."}
 

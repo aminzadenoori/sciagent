@@ -29,7 +29,7 @@ export ANTHROPIC_API_KEY=sk-ant-...          # only needed for the agent / LLM e
 export SCIAGENT_MODEL=claude-sonnet-5-5      # optional; any Claude model with tool use + vision
 
 make build        # download WN18/WN18RR/FB15k-237, run leakage analysis -> report PDF, ingest + index corpus
-make test         # 83 offline tests (fake Claude client), 4 live tests skipped without an API key
+make test         # 96 offline tests (fake Claude client), 4 live tests skipped without an API key
 
 python -m sciagent serve                     # web interface on http://localhost:8000
 python -m sciagent ask "Can TransE model symmetric relations?" -v
@@ -49,6 +49,16 @@ retrieved passages. Standard library only, no extra install.
 
 The screenshot uses a scripted demo run (no API key was available while building); with a key the same page shows
 Claude's real answers. Fonts load from Google Fonts when online.
+
+### Ask about a specific paper (including one not in the corpus)
+
+```bash
+python -m sciagent add path/to/paper.pdf          # or an arXiv id: 2508.16983, or a PDF link
+python -m sciagent ask "What are the main results?" --paper <paper_id printed by add>
+```
+
+In the web page: drop a PDF on "Add a paper" (or paste an arXiv id / PDF link), or click any paper in the list. Questions
+are then answered only from that paper, with paper-specific starter questions; "Use all papers" switches back.
 
 ### Collect a fresh corpus automatically (needs internet)
 

@@ -5,6 +5,7 @@
   build     ingest corpus (PDF text/tables/figures, cards) and build the hybrid index
   search    retrieval only (no LLM) - handy for debugging
   ask       run the Claude agent on a question
+  add       add one paper (PDF file, arXiv id or PDF link) and re-index
   serve     local web interface on http://localhost:8000
 """
 from __future__ import annotations
@@ -70,7 +71,7 @@ def cmd_ask(a):
     from .index import HybridIndex
     idx = HybridIndex.load(INDEX)
     agent = ResearchAgent(idx, DATA, model=a.model, max_steps=a.max_steps, log=print if a.verbose else None)
-    r = agent.run(a.question)
+    r = agent.run(a.question, focus_paper=a.paper)
     if a.json:
         print(json.dumps(r.to_dict(), indent=1))
         return
@@ -81,6 +82,14 @@ def cmd_ask(a):
     print("\nCited:", ", ".join(r.citations) or "-")
     if r.guardrail_events or r.error:
         print("Guardrails:", r.guardrail_events, r.error or "")
+
+
+def cmd_add(a):
+    from .library import add_paper
+    out = add_paper(a.source, CORPUS, INDEX, title=a.title)
+    print(f"added {out['paper_id']}: {out['title']}")
+    print(f"indexed parts: {out['chunks']}  {out['report']}")
+    print(f'ask about it:  python -m sciagent ask "..." --paper {out["paper_id"]}')
 
 
 def cmd_serve(a):
@@ -102,7 +111,11 @@ def main(argv=None):
     s = sub.add_parser("ask"); s.add_argument("question")
     s.add_argument("--model", default=os.environ.get("SCIAGENT_MODEL", "claude-sonnet-5-5"))
     s.add_argument("--max-steps", type=int, default=12); s.add_argument("--json", action="store_true")
-    s.add_argument("-v", "--verbose", action="store_true"); s.set_defaults(f=cmd_ask)
+    s.add_argument("-v", "--verbose", action="store_true")
+    s.add_argument("--paper", help="answer only from this paper id (see the web page or list in data/index/papers.jsonl)")
+    s.set_defaults(f=cmd_ask)
+    s = sub.add_parser("add"); s.add_argument("source", help="PDF path, arXiv id/URL, or direct PDF URL")
+    s.add_argument("--title"); s.set_defaults(f=cmd_add)
     s = sub.add_parser("serve"); s.add_argument("--port", type=int, default=8000)
     s.add_argument("--model", default=os.environ.get("SCIAGENT_MODEL", "claude-sonnet-5-5")); s.set_defaults(f=cmd_serve)
     a = p.parse_args(argv)
