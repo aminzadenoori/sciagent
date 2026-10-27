@@ -10,7 +10,12 @@ loop only enforces things a model should not be trusted to self-police:
   self-correction; if they persist they are stripped and the answer is
   downgraded, never silently accepted;
 * "insufficient" answers with zero retrieval are rejected once (the model must
-  look before it abstains).
+  look before it abstains), and, with network access, so are ones that never
+  searched outside the corpus (search_external_literature or research_topic).
+
+Sub-agent: `research_topic` starts the LiteratureAgent (subagents.py), which runs
+its own tool loop to find, screen, download and read papers; the chunks it read
+are shared with this agent so its findings can be cited here.
 
 Everything is recorded in a trace for evaluation and debugging.
 """
@@ -46,6 +51,13 @@ or the corpus does not contain the answer: call search_external_literature, pick
 it with citations. Say in the answer that the paper was added from outside the corpus. Only if no matching, \
 downloadable paper exists set evidence_status="insufficient", list the closest candidates you found, and do not fill \
 the gap from memory.
+  * If the question is about a research topic or the state of the art (e.g. "what is the highest F1 for task X \
+on dataset Y"), first check the corpus with search_papers. If it lacks papers that report this, call research_topic: \
+a literature-review agent that searches, downloads and reads papers and returns findings with chunk_ids. Then \
+compare the findings yourself: name the best reported value with its paper, model and setting, and say which \
+numbers are NOT comparable (different dataset version, task variant, metric averaging, zero-shot vs fine-tuned). \
+If the top results come from incomparable settings, use evidence_status="conflicting" or "partially_supported". \
+Make clear that "highest" means highest among the papers found, not necessarily in all literature.
   * If the question contains a false premise, correct it with evidence.
   * Some records are structured summaries ("cards") rather than full text; mention this if precision matters.
 - Finish by calling submit_answer exactly once. Be concise."""
@@ -122,6 +134,7 @@ class ResearchAgent:
         emit = on_event or (lambda e: None)
         t0 = time.time()
         ctx = ToolContext(self.index, self.data_dir, client=self.client, model=self.model, allow_network=self.allow_network)
+        ctx.emit = emit
         res = AgentResult(question=question)
         content = question
         if focus_paper:
@@ -205,7 +218,7 @@ class ResearchAgent:
         if ans.get("evidence_status") == "insufficient" and not any(s.tool in ("search_papers", "list_papers") for s in res.steps):
             return "abstain check failed: you must search the corpus before concluding the evidence is insufficient"
         if (ans.get("evidence_status") == "insufficient" and ctx.allow_network and not getattr(self, "_focus", None)
-                and not any(s.tool == "search_external_literature" for s in res.steps)):
+                and not any(s.tool in ("search_external_literature", "research_topic") for s in res.steps)):
             return ("external check failed: the corpus does not answer this, so search outside it with "
                     "search_external_literature; if a matching paper is found, add it with fetch_paper and answer from "
                     "it before concluding the evidence is insufficient")

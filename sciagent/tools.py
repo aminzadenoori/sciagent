@@ -31,6 +31,7 @@ class ToolContext:
         self.seen_chunks: set[str] = set()  # chunk ids returned to the model this session
         self.focus_paper: str | None = None  # when set, paper searches are restricted to this paper
         self.added_papers: list[str] = []  # papers fetched into the corpus during this run
+        self.emit = lambda e: None  # live event sink (web UI); set by the agent
 
     def _emit(self, hits) -> list[dict]:
         out = []
@@ -147,13 +148,13 @@ def kg_leakage_analysis(ctx: ToolContext, dataset: str, min_conf: float = 0.9) -
             "note": "computed now from the benchmark files; cite as tool output, not as a paper"}
 
 
-def search_external_literature(ctx: ToolContext, query: str, n: int = 8) -> dict:
+def search_external_literature(ctx: ToolContext, query: str, n: int = 8, year_from: int | None = None) -> dict:
     """Search arXiv and OpenAlex for papers outside the corpus; best title matches first."""
     if not ctx.allow_network:
         return {"error": "network disabled"}
     import difflib
     import re as _re
-    from .collect import arxiv_search, dedupe, openalex_search
+    from .collect import arxiv_search, dedupe, openalex_search, topic_similarity
     n = max(1, min(int(n), 15))
     recs, errors = [], []
     words = [w for w in _re.findall(r"[A-Za-z0-9-]+", query) if len(w) > 2][:8]
@@ -169,16 +170,21 @@ def search_external_literature(ctx: ToolContext, query: str, n: int = 8) -> dict
     if not recs:
         return {"error": "external search failed or found nothing" + (f" ({'; '.join(errors)})" if errors else "")}
     recs = dedupe(recs)
+    if year_from:
+        recs = [r for r in recs if (r.get("year") or 0) >= int(year_from)]
     in_corpus = set(ctx.index.papers)
     q = query.lower()
-    for r in recs:
+    sims = topic_similarity(recs, [query]) if recs else []
+    for r, sim in zip(recs, sims):
         r["_match"] = round(difflib.SequenceMatcher(None, q, (r.get("title") or "").lower()).ratio(), 2)
-    recs.sort(key=lambda r: -r["_match"])
+        r["_rel"] = round(sim, 3)
+    # exact-title lookups rank by title match, topic searches by title+abstract similarity
+    recs.sort(key=lambda r: -max(r["_match"] if r["_match"] >= 0.8 else 0, r["_rel"]))
     return {"note": "NOT in the indexed corpus: abstract-level metadata only. To use one as evidence, call fetch_paper "
                     "with its `fetchable` value, then search it with paper_ids=[the new paper_id].",
             "errors": errors or None,
             "results": [{"title": r["title"], "year": r.get("year"), "authors": (r.get("authors") or [])[:5],
-                         "venue": r.get("venue"), "title_match": r["_match"], "id": r["id"],
+                         "venue": r.get("venue"), "title_match": r["_match"], "topic_relevance": r["_rel"], "id": r["id"],
                          "already_in_corpus": r["id"] in in_corpus,
                          "fetchable": r.get("arxiv_id") or r.get("pdf_url"),
                          "abstract": (r.get("abstract") or "")[:500]} for r in recs[:n]]}
@@ -197,6 +203,16 @@ def fetch_paper(ctx: ToolContext, source: str) -> dict:
     ctx.added_papers.append(out["paper_id"])
     return {"paper_id": out["paper_id"], "title": out["title"], "indexed_parts": out["chunks"],
             "note": "now in the corpus: use search_papers with paper_ids=[paper_id] to read and cite it"}
+
+
+def research_topic(ctx: ToolContext, question: str, max_papers: int = 5) -> dict:
+    """Start the literature-review sub-agent: search outside, screen, download, read, return cited findings."""
+    if ctx.client is None:
+        return {"error": "LLM client unavailable"}
+    if not ctx.allow_network:
+        return {"error": "network disabled: cannot search for new papers"}
+    from .subagents import LiteratureAgent
+    return LiteratureAgent(ctx, max_papers=max_papers, emit=ctx.emit).run(question)
 
 
 _SCIQA = {}
@@ -272,6 +288,15 @@ TOOLS: dict[str, tuple[Callable, dict]] = {
                        "with a benchmark. Generates SPARQL with retrieved SciQA examples and executes it. Cite as cite_as.",
         "input_schema": {"type": "object", "properties": {"question": {"type": "string"}, "shots": {"type": "integer"}},
                          "required": ["question"]}}),
+    "research_topic": (research_topic, {
+        "description": "Start a literature-review agent for a research question the corpus does not cover (e.g. the "
+                       "best reported score for a task on a dataset, or what methods exist for a problem). It searches "
+                       "arXiv and OpenAlex with several queries, screens candidates, downloads up to max_papers papers "
+                       "into the corpus, reads their results and returns findings with chunk_ids you can cite. "
+                       "Use it once per topic; for one known paper use fetch_paper instead.",
+        "input_schema": {"type": "object", "properties": {
+            "question": {"type": "string", "description": "The research question, with task, dataset and metric."},
+            "max_papers": {"type": "integer", "default": 5}}, "required": ["question"]}}),
     "fetch_paper": (fetch_paper, {
         "description": "Download a paper that is NOT yet in the corpus (arXiv id like 2508.16983, arXiv URL, or a direct "
                        "PDF link, e.g. from search_external_literature), add it to the corpus with its tables and figures, "
@@ -280,8 +305,8 @@ TOOLS: dict[str, tuple[Callable, dict]] = {
     "search_external_literature": (search_external_literature, {
         "description": "Search OpenAlex for papers NOT in the corpus (titles + abstracts). Use when the corpus lacks "
                        "evidence, to tell the user what exists. Results cannot be cited as chunk evidence.",
-        "input_schema": {"type": "object", "properties": {"query": {"type": "string"}, "n": {"type": "integer"}},
-                         "required": ["query"]}}),
+        "input_schema": {"type": "object", "properties": {"query": {"type": "string"}, "n": {"type": "integer"},
+                                                          "year_from": {"type": "integer"}}, "required": ["query"]}}),
 }
 
 SUBMIT_ANSWER = {

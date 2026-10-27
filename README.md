@@ -29,7 +29,7 @@ export ANTHROPIC_API_KEY=sk-ant-...          # only needed for the agent / LLM e
 export SCIAGENT_MODEL=claude-sonnet-5-5      # optional; any Claude model with tool use + vision
 
 make build        # download WN18/WN18RR/FB15k-237, run leakage analysis -> report PDF, ingest + index corpus
-make test         # 106 offline tests (fake Claude client), 4 live tests skipped without an API key
+make test         # 111 offline tests (fake Claude client), 4 live tests skipped without an API key
 
 python -m sciagent serve                     # web interface on http://localhost:8000
 python -m sciagent ask "Can TransE model symmetric relations?" -v
@@ -49,6 +49,18 @@ retrieved passages. Standard library only, no extra install.
 
 The screenshot uses a scripted demo run (no API key was available while building); with a key the same page shows
 Claude's real answers. Fonts load from Google Fonts when online.
+
+### Ask about a research topic the corpus does not cover
+
+```bash
+python -m sciagent ask "What is the highest F1 score for requirements classification with LLMs on the PROMISE dataset?" -v
+python -m sciagent review "requirements classification with LLMs on PROMISE, F1" --max-papers 5   # literature agent only
+```
+
+The main agent starts a literature-review agent that searches arXiv and OpenAlex, screens the results, downloads the
+best papers, reads their result tables and returns cited findings; the main agent then compares them, flagging numbers
+that come from different dataset versions, task variants or training regimes. In the web page the review agent's steps
+appear indented under "Started the literature-review agent".
 
 ### Ask about a specific paper (including one not in the corpus)
 
@@ -81,7 +93,7 @@ with full-text PDFs automatically (the ingester keeps the richest record per pap
 
 ```bash
 make eval-retrieval                      # retrieval metrics, no API key (BM25 / dense / hybrid)
-make eval                                # full agent eval on 27 questions + LLM-as-judge groundedness
+make eval                                # full agent eval on 28 questions + LLM-as-judge groundedness
 python evals/run_eval.py --ids q08 q09   # a subset
 
 make sciqa-baseline                      # SciQA test, non-LLM nearest-neighbour baseline (offline)
@@ -98,13 +110,14 @@ sciagent/
   ingest.py       PDF -> section-aware chunks, tables (Markdown), figures (PNG + caption); degraded-input handling
   index.py        hybrid retrieval: BM25 + dense (LSA or sentence-transformers) + reciprocal rank fusion
   tools.py        agent tools (schemas + implementations) and the submit_answer contract
-  agent.py        Claude tool-use loop with citation / abstention guardrails and tracing
+  agent.py        main Claude tool-use agent with citation / abstention guardrails and tracing
+  subagents.py    literature-review agent (search, screen, download, read, extract findings), started via research_topic
   sciqa.py        SciQA NL->SPARQL: example retrieval, kNN baseline, Claude generator, metrics, ORKG execution
   evaluation.py   retrieval + answer metrics, LLM-as-judge
   kg/             benchmark download, leakage analysis + rule baseline, PDF report generation
   web/            local web interface (stdlib HTTP server + one HTML page, live tool trace via Server-Sent Events)
   cli.py          python -m sciagent {collect,analyze,build,search,ask,serve}
-evals/            questions.jsonl (27 designed questions), run_eval.py, run_sciqa.py, results/
+evals/            questions.jsonl (28 designed questions), run_eval.py, run_sciqa.py, results/
 tests/            pytest suite (fake Claude client; live tests marked `live`)
 data/seed_corpus/ seed paper cards
 scripts/          run_examples.py

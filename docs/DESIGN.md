@@ -49,6 +49,27 @@ flowchart LR
 - **Manual loop, no framework.** The loop is ~150 lines on the Anthropic SDK, so every guardrail is visible and unit
   testable with a scripted fake client.
 
+### Two agents
+
+| Agent | Role | Tools | Started by |
+|---|---|---|---|
+| `ResearchAgent` (`agent.py`) | Answers the question; compares and judges evidence | all tools, including `research_topic` | the user |
+| `LiteratureAgent` (`subagents.py`) | Literature review: search → screen → download → read → extract | outside search, fetch, paper search, read, outline, figure, Python | the main agent, via `research_topic` |
+
+For a question such as *"What is the highest F1 for requirements classification with LLMs on the PROMISE dataset?"*
+the main agent first checks the corpus; if it lacks such papers it calls `research_topic`. The literature agent runs
+its own loop in phases: several outside searches (task, synonyms, dataset), screening on titles and abstracts,
+downloading the best candidates (capped, default 5), and reading result tables. It returns **findings** — metric,
+value, dataset, setting (task variant, split, zero/few-shot or fine-tuned) and the chunk ids where each number appears.
+The main agent then compares them and answers; it must say which numbers are not comparable and that "highest" means
+"highest among the papers found".
+
+Why split here and nowhere else: a literature review is a long, self-contained task with many intermediate results
+(search pages, abstracts, rejected candidates) that would crowd the main agent's context. The sub-agent returns only
+compact, verified findings. Enforced in code: step budget, download cap, at least one outside search before submitting,
+and findings may only cite chunks the sub-agent actually read (others are dropped and reported). Both agents share the
+same chunk registry, so the main agent can cite the sub-agent's evidence and nothing else.
+
 ## 2. Corpus collection (automated)
 
 `python -m sciagent collect --author "Sahar Vahdati" --topic "..."` (author optional, topics optional, at least one):

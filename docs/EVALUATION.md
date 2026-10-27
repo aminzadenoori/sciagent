@@ -2,7 +2,7 @@
 
 Three layers, from cheapest to most expensive:
 
-1. **Unit / integration tests** (`pytest`, 106 offline + 4 live) — deterministic, no API key.
+1. **Unit / integration tests** (`pytest`, 111 offline + 4 live) — deterministic, no API key.
 2. **Retrieval and data-analysis evaluation** — offline, real numbers below.
 3. **Agent and LLM evaluation** — needs `ANTHROPIC_API_KEY`; harness, metrics and question set are ready
    (`make eval`, `make sciqa-claude`). **These were not run in the build sandbox (no API key, no ORKG access), so no
@@ -27,15 +27,16 @@ image-only "scanned" PDF, a missing PDF, and a duplicate record (card vs PDF).
 | `test_library.py` (13) | arXiv id parsing (6 forms); PDF title extraction; **adding a local PDF indexes its text, table and figure**; re-adding replaces instead of duplicating; arXiv add uses API metadata; non-PDF and missing file rejected; **focus restricts search to one paper**; focused agent prompt; unknown paper; web upload + focused search; non-PDF upload rejected |
 | `test_collect_pipeline.py` (6) | **whole collection pipeline on simulated arXiv/OpenAlex**: author seed + topic search + reference expansion, cross-source merge, off-topic papers dropped from every source, author papers kept even off-vocabulary, failed PDF → abstract-only, report counts, collected papers ingested with figures; topic-only mode; incremental re-runs add nothing twice; all sources down → empty result + warnings, no crash; **agent `fetch_paper` adds a missing paper mid-run** |
 | `test_outside_corpus.py` (4) | external search merges arXiv + OpenAlex and ranks the exact title first; **agent that gives up on a paper missing from the corpus is sent back, searches outside, fetches the paper, searches it and answers with valid citations**; abstaining after an outside search is accepted; no outside search required offline or when the user pinned one paper |
+| `test_subagent.py` (5) | `research_topic` offered to the main agent; **main agent starts the literature agent, which searches outside, downloads papers within its cap, reads their result tables and returns findings the main agent cites**; findings citing unread chunks are dropped; download budget enforced; literature agent must search outside before submitting; offline / no-LLM errors |
 | `test_live.py` (4, `-m live`) | real API: cited supported answer, conflict surfaced, abstention, SciQA 3-shot exact match |
 
-Result in the build sandbox: **106 passed, 4 skipped (live)** in ~12 s.
+Result in the build sandbox: **111 passed, 4 skipped (live)** in ~16 s.
 
 Two real bugs were caught by tests while building: whole-table extraction scrambling decimals, and a test fixture
 whose leakage rate (33% held out) was unrealistic so the 0.9-confidence rule miner correctly refused to mine the rule —
 the fix was to the fixture (5% held out, like WN18), and a negative test was added.
 
-## 2. Agent evaluation set (`evals/questions.jsonl`, 27 questions)
+## 2. Agent evaluation set (`evals/questions.jsonl`, 28 questions)
 
 Designed to cover each robustness behaviour, not just accuracy:
 
@@ -54,6 +55,7 @@ Designed to cover each robustness behaviour, not just accuracy:
 | corpus meta | q21 | which papers are Vahdati's (list_papers) |
 | tool failure | q26 | YAGO3-10 not supported by the analysis tool |
 | structured KG | q27 | ORKG via NL→SPARQL |
+| literature review | q28 | best F1 for LLM requirements classification on PROMISE: starts the literature agent, compares only comparable settings |
 
 Gold evidence is `(paper_id, phrase)`, so it survives re-chunking; `gold_coverage()` verifies every gold item exists in
 the corpus before each run. **Answer metrics:** status accuracy, required-fact recall (alternatives allowed), trap
@@ -120,7 +122,7 @@ verb group, similar to).
 
 ```bash
 export ANTHROPIC_API_KEY=...
-make eval                                                     # 27 agent questions + judge
+make eval                                                     # 28 agent questions + judge
 python evals/run_sciqa.py --generator claude --shots 0 1 3 5  # SciQA query metrics, no training
 python evals/run_sciqa.py --generator claude --shots 3 --execute --limit 120   # + answer F1 on ORKG
 pytest -m live

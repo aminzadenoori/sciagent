@@ -120,6 +120,9 @@ button { font: inherit; color: inherit; }
 .ta { font-size: 13px; color: var(--graphite); word-break: break-word; }
 .tr { font-size: 13px; color: var(--accent); margin-top: 2px; }
 .trail li.guard .tr { color: var(--bad); }
+.trail li.sub { margin-left: 22px; padding-bottom: 12px; }
+.trail li.sub .node { width: 9px; height: 9px; left: 2px; top: 7px; border-width: 1.5px; }
+.trail li.sub .tl { font-size: 14px; font-weight: 400; }
 .trail li.flash { background: var(--accent-soft); border-radius: 6px; }
 
 .viewer { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 18px; }
@@ -223,6 +226,7 @@ const PAPER_TRIES = [
 ];
 
 const TRIES = [
+  ["What is the highest F1 score for requirements classification with LLMs on the PROMISE dataset?", "Starts a literature search: finds, downloads and reads papers"],
   ["Can TransE model symmetric relations?", "Two papers disagree"],
   ["Is CapsE better than RotatE on FB15k-237?", "The answer depends on the evaluation protocol"],
   ["In Figure 1 of the leakage report, which dataset has the lowest bars?", "Reads a chart image"],
@@ -242,6 +246,7 @@ const TOOL = {
   query_scholarly_kg: ["Queried the ORKG knowledge graph", (a) => a.question],
   search_external_literature: ["Searched outside the corpus", (a) => `“${a.query}”`],
   fetch_paper: ["Added a paper to the corpus", (a) => a.source],
+  research_topic: ["Started the literature-review agent", (a) => a.question],
 };
 
 function summarize(tool, raw) {
@@ -255,6 +260,7 @@ function summarize(tool, raw) {
   if (tool === "kg_leakage_analysis") return `${o.leakage.test_recoverable_by_rule_pct}% of test triples recoverable, rule MRR ${o.rule_model.MRR}`;
   if (tool === "query_scholarly_kg") return o.n_answers == null ? "Query could not run" : `${o.n_answers} results`;
   if (tool === "search_external_literature") return `${plural(o.results.length, "paper")} found outside the corpus`;
+  if (tool === "research_topic") return `${plural(o.papers_fetched.length, "paper")} downloaded, ${plural(o.findings.length, "finding")} with citations`;
   if (tool === "fetch_paper") return `${o.title} (${plural((o.indexed_parts && o.indexed_parts.text) || 0, "passage")})`;
   return "Done";
 }
@@ -376,12 +382,15 @@ function runAgent(q) {
   $("#trailPanel").hidden = false;
   const trail = $("#trail");
   trail.innerHTML = "";
+  let subCalls = 0;
   es = new EventSource("/api/ask?q=" + encodeURIComponent(q) + (focus ? "&paper=" + encodeURIComponent(focus.id) : ""));
   es.onmessage = (m) => {
     const ev = JSON.parse(m.data);
     if (ev.type === "tool_call") {
+      if (ev.depth) subCalls++;
       const [label, fmt] = TOOL[ev.tool] || [ev.tool, () => ""];
-      trail.insertAdjacentHTML("beforeend", `<li class="pending" data-tool="${esc(ev.tool)}"><span class="node"></span><div class="tl">${esc(label)}</div><div class="ta">${esc(fmt(ev.args || {}))}</div></li>`);
+      if (ev.tool === "research_topic" && $("#body .notice")) $("#body .notice").textContent = "Searching the literature: the review agent is finding, downloading and reading papers. This can take a minute.";
+      trail.insertAdjacentHTML("beforeend", `<li class="pending${ev.depth ? " sub" : ""}" data-tool="${esc(ev.tool)}"><span class="node"></span><div class="tl">${esc(label)}</div><div class="ta">${esc(fmt(ev.args || {}))}</div></li>`);
     } else if (ev.type === "tool_result") {
       const li = [...trail.querySelectorAll("li.pending")].find((x) => x.dataset.tool === ev.tool);
       if (li) { li.classList.replace("pending", "done"); li.insertAdjacentHTML("beforeend", `<div class="tr">${esc(summarize(ev.tool, ev.output))}</div>`); }
@@ -394,7 +403,7 @@ function runAgent(q) {
     } else if (ev.type === "final") {
       es.close(); $("#go").disabled = false;
       const r = ev.result;
-      trail.insertAdjacentHTML("beforeend", `<li class="final"><span class="node"></span><div class="tl">Answered</div><div class="ta">${plural(r.steps.length, "tool call")} in ${r.seconds}s</div></li>`);
+      trail.insertAdjacentHTML("beforeend", `<li class="final"><span class="node"></span><div class="tl">Answered</div><div class="ta">${plural(r.steps.length, "tool call")}${subCalls ? `, plus ${subCalls} by the literature agent` : ""}, in ${r.seconds}s</div></li>`);
       render(r);
       if (r.added_papers && r.added_papers.length) loadPapers();
     } else if (ev.type === "error") {

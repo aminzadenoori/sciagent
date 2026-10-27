@@ -5,6 +5,7 @@
   build     ingest corpus (PDF text/tables/figures, cards) and build the hybrid index
   search    retrieval only (no LLM) - handy for debugging
   ask       run the Claude agent on a question
+  review    run only the literature-review agent on a research question
   add       add one paper (PDF file, arXiv id or PDF link) and re-index
   serve     local web interface on http://localhost:8000
 """
@@ -98,6 +99,25 @@ def cmd_add(a):
     print(f'ask about it:  python -m sciagent ask "..." --paper {out["paper_id"]}')
 
 
+def cmd_review(a):
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        sys.exit("ANTHROPIC_API_KEY is not set.")
+    import anthropic
+    from .index import HybridIndex
+    from .subagents import LiteratureAgent
+    from .tools import ToolContext
+    ctx = ToolContext(HybridIndex.load(INDEX), DATA, client=anthropic.Anthropic(), model=a.model)
+    show = lambda e: print(f"  -> {e['tool']}({json.dumps(e.get('args', {}))[:110]})") if e["type"] == "tool_call" else None
+    out = LiteratureAgent(ctx, max_papers=a.max_papers, emit=show).run(a.question)
+    print("\n" + out["summary"] + "\n")
+    for f in out["findings"]:
+        print(f"- {f.get('metric', '')} {f.get('value', '')} on {f.get('dataset', '')} ({f.get('setting', '')}): "
+              f"{f['finding']}  [{', '.join(f['chunk_ids'])}]")
+    if out["gaps"]:
+        print("\nGaps:", out["gaps"])
+    print(f"\nDownloaded: {', '.join(out['papers_fetched']) or '-'}")
+
+
 def cmd_serve(a):
     from .web.server import serve
     serve(DATA, port=a.port, model=a.model)
@@ -121,6 +141,8 @@ def main(argv=None):
     s.add_argument("-v", "--verbose", action="store_true")
     s.add_argument("--paper", help="answer only from this paper id (see the web page or list in data/index/papers.jsonl)")
     s.set_defaults(f=cmd_ask)
+    s = sub.add_parser("review"); s.add_argument("question"); s.add_argument("--max-papers", type=int, default=5)
+    s.add_argument("--model", default=os.environ.get("SCIAGENT_MODEL", "claude-sonnet-5-5")); s.set_defaults(f=cmd_review)
     s = sub.add_parser("add"); s.add_argument("source", help="PDF path, arXiv id/URL, or direct PDF URL")
     s.add_argument("--title"); s.set_defaults(f=cmd_add)
     s = sub.add_parser("serve"); s.add_argument("--port", type=int, default=8000)
