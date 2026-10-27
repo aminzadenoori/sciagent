@@ -106,16 +106,17 @@ def _block_to_dict(b) -> dict:
 
 class ResearchAgent:
     def __init__(self, index: HybridIndex, data_dir: Path, client=None, model: str = DEFAULT_MODEL,
-                 max_steps: int = 12, allow_network: bool = True, log=None):
+                 max_steps: int = 12, allow_network: bool = True, log=None, disabled_tools=()):
         if client is None:
             import anthropic
             client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY
         self.client, self.model, self.max_steps = client, model, max_steps
         self.index, self.data_dir, self.allow_network = index, data_dir, allow_network
         self.log = log or (lambda *a: None)
+        self.disabled_tools = set(disabled_tools)  # e.g. {"query_scholarly_kg"} when ORKG is the answer key
 
     def _create(self, messages, tool_choice=None):
-        tools = tool_specs()
+        tools = [t for t in tool_specs() if t["name"] not in self.disabled_tools]
         tools[-1] = {**tools[-1], "cache_control": {"type": "ephemeral"}}  # cache system + tools across steps
         kw = dict(model=self.model, max_tokens=2048, tools=tools, messages=messages,
                   system=[{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}])
@@ -175,7 +176,8 @@ class ResearchAgent:
                         continue
                     ts = time.time()
                     emit({"type": "tool_call", "tool": u_["name"], "args": u_.get("input", {})})
-                    out = call_tool(ctx, u_["name"], u_.get("input", {}))
+                    out = (json.dumps({"error": f"{u_['name']} is disabled for this run"})
+                           if u_["name"] in self.disabled_tools else call_tool(ctx, u_["name"], u_.get("input", {})))
                     emit({"type": "tool_result", "tool": u_["name"], "output": out[:4000],
                           "seconds": round(time.time() - ts, 2)})
                     res.steps.append(Step(u_["name"], u_.get("input", {}), out[:300], round(time.time() - ts, 2)))
