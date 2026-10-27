@@ -63,6 +63,8 @@ def cmd_search(a):
 
 
 def cmd_ask(a):
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        sys.exit("ANTHROPIC_API_KEY is not set. Export it, or use `python -m sciagent search` for retrieval only.")
     from .agent import ResearchAgent
     from .index import HybridIndex
     idx = HybridIndex.load(INDEX)
