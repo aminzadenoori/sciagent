@@ -1,0 +1,10 @@
+anthropic>=0.40
+pymupdf>=1.24
+rank_bm25>=0.2.2
+scikit-learn>=1.3
+scipy>=1.10
+numpy>=1.26
+matplotlib>=3.8
+pytest>=8
+# optional: neural dense retrieval (set SCIAGENT_EMBED_MODEL=sentence-transformers/all-MiniLM-L6-v2)
+# sentence-transformers>=3

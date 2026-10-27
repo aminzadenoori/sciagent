@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+# downloaded / generated data (rebuilt by `make build`, `make collect`, run_sciqa.py)
+data/kg/
+data/sciqa/
+data/index/
+data/corpus/
+# raw eval runs; curated results are copied into docs/
+evals/results/*/predictions_*.jsonl
+evals/results/*/agent_runs.jsonl
