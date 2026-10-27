@@ -10,25 +10,151 @@ reported as such rather than smoothed over.
 knowledge graphs + LLMs for factual reliability — including a real published disagreement (RotatE vs.
 *Loss-Aware Pattern Inference* on whether TransE can model symmetric relations).
 
-**Benchmark testing** follows LLM-based NL→SPARQL scientific QA on **SciQA**, a question bank with correct queries and
-answers over the **ORKG** knowledge graph (official train/valid/test split). It uses **no training or fine-tuning**:
-the train split is only a pool of retrieved few-shot examples. See
-[ORKG and SciQA](#orkg-and-sciqa-what-each-one-is).
+**How correctness is measured:** a set of questions with **golden answers written in advance**. The system answers
+each question, and an **LLM judge** compares its answer with the golden answer. See
+[How we check that the answers are correct](#how-we-check-that-the-answers-are-correct). No model is trained or
+fine-tuned anywhere in this project.
 
 | Doc | What's in it |
 |---|---|
-| [ORKG and SciQA explained](#orkg-and-sciqa-what-each-one-is) | The knowledge graph vs. the question bank with the ground truth |
+| [How we check that the answers are correct](#how-we-check-that-the-answers-are-correct) | The evaluation: golden answers, LLM judge, worked example, how to run it |
+| [ORKG and SciQA (optional)](#orkg-and-sciqa-optional) | A structured knowledge graph and an independent question bank, used as extras |
 | [docs/DESIGN.md](docs/DESIGN.md) | Architecture, design choices, how each review criterion is addressed |
 | [docs/EVALUATION.md](docs/EVALUATION.md) | Test suite, eval harness, results (retrieval, SciQA, leakage analysis) |
 | [docs/EXAMPLES.md](docs/EXAMPLES.md) | Example questions, tool traces and outputs |
 | [docs/AI_USAGE.md](docs/AI_USAGE.md) | How a coding agent (Claude) was used to build this, and what was checked by hand |
 
+## How we check that the answers are correct
+
+### The idea in one picture
+
+```
+ 28 questions ──► agentic system ──► system answer ──┐
+                                                     ├──► LLM judge ──► verdict + score
+ 28 golden answers (written in advance) ─────────────┘        │
+                                                              └──► what matched, what is missing, what contradicts
+```
+
+1. **Questions with golden answers.** `evals/questions.jsonl` holds 28 questions. Each has a **golden answer**, the
+   answer a careful expert would give, written in advance from the paper texts.
+2. **The system answers.** Each question goes to the agentic system exactly as a user's question would. It searches,
+   reads and uses tools, then answers with citations.
+3. **An LLM judge compares.** A separate Claude call sees the question, the golden answer and the system's answer, and
+   gives a verdict from a fixed rubric.
+4. **Scores are added up** into one number per category and overall, with every verdict explained.
+
+### What the judge can decide
+
+| Verdict | Score | When |
+|---|---|---|
+| correct | 1 | the answer contains all key points of the golden answer and contradicts none |
+| partially correct | 0.5 | some key points are present and none is contradicted (e.g. only one side of a real disagreement) |
+| incorrect | 0 | the answer contradicts the golden answer (e.g. a different number) or misses its main point |
+| correct abstention | 1 | the answer is not in the papers, and the system says so |
+| wrong abstention | 0 | the system says "not available" although the answer is in the papers |
+| hallucinated | 0 | the answer is not in the papers, but the system states specific values anyway |
+
+Each golden answer has a type, which tells the judge what "correct" means:
+
+| Type | Questions | Correct means |
+|---|---|---|
+| `fact` | 23 | the answer contains the golden answer's key points (numbers may be rounded or written as percentages) |
+| `abstain` | 4 | the answer says the information is not available and invents nothing |
+| `open` | 1 | the answer meets listed criteria; used for the literature-search question, whose best value depends on the papers found |
+
+### A worked example
+
+*This is an illustration of the format, not a real run.*
+
+**Question (q08):** Can TransE model symmetric relations?
+
+**Golden answer (written in advance):** The papers disagree, so the answer should be "conflicting". RotatE's
+comparison says TransE cannot model symmetric relations (h + r = t and t + r = h together force r = 0). The
+loss-aware pattern inference paper argues that this proof assumes an exact zero residual that the training losses
+never enforce; under margin-based losses TransE can encode symmetric relations when the margin is chosen
+appropriately. The disagreement comes from the assumption about the loss.
+
+**System answer A:** "No. TransE cannot model symmetric relations, because h + r = t and t + r = h force r = 0
+[arxiv:1902.10197#t1]."
+
+**Judge's output for A:**
+
+```json
+{"verdict": "partially_correct",
+ "matched_points": ["RotatE's argument that h + r = t and t + r = h force r = 0"],
+ "missing_points": ["the loss-aware paper's counter-argument", "that the papers disagree", "the role of the loss"],
+ "contradictions": [],
+ "explanation": "States one side of a documented disagreement as settled."}
+```
+
+The score is 0.5. A system answer that presents both sides and names the loss assumption would get **correct** (1.0).
+
+### Can we trust the judge?
+
+The judge is itself an LLM, so it is checked before its scores are used.
+
+- **Calibration set.** `evals/judge_calibration.jsonl` holds 12 answers whose correct verdict was decided by hand. They
+  cover every verdict and the usual traps:
+  - paraphrases and rounding that must still count as correct;
+  - a wrong number and a half answer;
+  - a one-sided answer to a real disagreement;
+  - an accepted false premise;
+  - a wrong abstention and a correct abstention;
+  - invented results.
+- **Agreement check.** `python evals/check_judge.py` runs the judge on them and reports:
+  - **exact agreement:** the same verdict as the label;
+  - **pass/fail agreement:** the same side of pass/fail.
+
+  If agreement is low, fix the judge before looking at system scores.
+- **Bias controls:**
+  - temperature 0 and a written rubric;
+  - citation markers removed before judging;
+  - every verdict lists matched, missing and contradicted points, so a person can audit it;
+  - `--judge-model` lets a different model judge than the one answering, which reduces self-preference.
+
+### How to run it and read the results
+
+```bash
+python evals/check_judge.py              # step 1: is the judge reliable?  -> evals/results/judge_check.json
+python evals/run_eval.py --judge         # step 2: score the system       -> evals/results/<date-time>/report.md
+python evals/run_eval.py --judge --judge-model claude-opus-5-5   # optional: a different model as judge
+```
+
+`report.md` starts with the **primary score**, then gives:
+1. the verdict counts;
+2. a per-category score (facts, figures, conflicts, unanswerable…);
+3. a table with one row per question: verdict, missing points, contradictions and the judge's explanation;
+4. the rule-based secondary checks.
+
+The full answers and tool traces are in `agent_runs.jsonl`. Both commands need `ANTHROPIC_API_KEY`.
+
+### Everything that is evaluated, and against what
+
+| Evaluation | What it tells you | Compared against | Command | Status |
+|---|---|---|---|---|
+| **Golden answers + LLM judge (primary)** | Are the system's answers correct and honest? | 28 golden answers | `run_eval.py --judge` | ready; needs API key |
+| Judge calibration | Can the judge be trusted? | 12 hand-labelled verdicts | `check_judge.py` | ready; needs API key |
+| Retrieval | Does search find the passage that holds the answer? | gold passages for 21 questions | `make eval-retrieval` | **run**: recall@5 0.95 (BM25) |
+| Rule-based checks (secondary) | Right status, required facts, no forbidden claims, no made-up citations | the same 28 questions | part of `run_eval.py` | ready; needs API key |
+| Independent golden answers (optional) | The same, with answers written by other people | ORKG answers to SciQA questions | `run_sciqa_papers.py --judge` | ready; needs API key + internet |
+| SciQA query writing (optional) | Can Claude write correct ORKG queries? | SciQA's correct queries | `run_sciqa.py` | baseline run; Claude run needs API key |
+| Software tests | Does every part of the code behave as specified? | expected behaviour | `make test` | **run**: 141 pass |
+
+### Limits of this evaluation
+
+- **The golden answers were written by the same process that built the system**, from summaries of the papers. Check a
+  few against the original PDFs. For answers written by others, use the optional SciQA-from-papers run.
+- **28 questions show behaviour, not precise statistics.** A difference of one or two questions is noise.
+- **Don't tune on the test.** If prompts are changed after seeing which questions fail, the score stops being a fair
+  test. Then write new held-out questions, or split the set into a development half and a test half.
+- **The judge can make mistakes.** That is why the calibration check exists, and why every verdict is explained.
+
 ## The seven review criteria: what was done and where to look
 
 **Status in one line:** everything below is implemented and covered by 141 offline tests. Retrieval, the SciQA
-baseline and the benchmark-leakage analysis were run on real data. The LLM-based evaluations (agent answers, Claude
-SciQA) are built and wired up but **were not run here** (no API key in the build sandbox); `make eval` and
-`make sciqa-claude` produce them.
+baseline and the benchmark-leakage analysis were run on real data. The main evaluation (golden answers + LLM judge) is
+built and tested but **was not run here**, because the build sandbox had no API key. `python evals/check_judge.py` and
+`python evals/run_eval.py --judge` produce it.
 
 ### 1. How the agentic system is structured
 
@@ -101,7 +227,7 @@ Limits: there is no OCR for scanned PDFs, and real-paper figures only arrive aft
 - **Train/test leakage, measured on real benchmarks.** A rule-only model with no learning recovers 93.2% of WN18 test
   triples and reaches filtered MRR **0.931**. That falls to 0.336 on WN18RR and 0.0007 on FB15k-237. Ranking uses the
   filtered setting with random tie-breaking, and the expected-rank formula is checked against brute force.
-- **SciQA (NL→SPARQL), done properly:**
+- **SciQA query writing (optional experiment), done properly:**
   - **Clean split:** the train split is only a pool of few-shot examples, and its vectoriser never sees test data.
   - **Leakage audit:** it found **7 test items duplicated in train** in the official split; they are excluded.
   - **No-LLM baseline:** it gets 74.9% exact match on template questions but **0%** on hand-written ones, so results
@@ -114,82 +240,30 @@ Limits: there is no OCR for scanned PDFs, and real-paper figures only arrive aft
 
 ### 6. Evaluation and testing
 
-**Main measure: golden answers + LLM judge.** Each of 28 questions has a golden answer written in advance. The system
-answers each question, and an LLM judge compares its answer with the golden answer:
-
-```
-question ──► agentic system ──► system answer ─┐
-                                               ├──► LLM judge ──► verdict + matched / missing / contradicted points
-golden answer (written in advance) ────────────┘
-```
-
-| Verdict | Score | Meaning |
-|---|---|---|
-| correct | 1 | all key points of the golden answer, nothing contradicting it |
-| partially correct | 0.5 | some key points, none contradicted (e.g. only one side of a real disagreement) |
-| incorrect | 0 | contradicts the golden answer or misses its main point |
-| correct abstention | 1 | the answer is not in the papers, and the system says so |
-| wrong abstention | 0 | the system gave up although the answer exists |
-| hallucinated | 0 | the answer is not in the papers, but the system states specific values |
-
-- **Golden answers** (`evals/questions.jsonl`, field `reference_answer`): taken from the source texts, with a type
-  telling the judge what correct means:
-  - **fact:** the key points must be present;
-  - **abstain:** the right answer is "not in the papers";
-  - **open:** criteria for the literature-search question, where the true best value depends on what is found.
-- **The 28 questions cover every kind of difficulty:**
-  - facts and exact numbers;
-  - a table, a figure and an analysis;
-  - multi-hop reasoning;
-  - real disagreements;
-  - unanswerable questions and a false premise;
-  - incomparable numbers;
-  - a tool failure;
-  - a literature search.
-- **Judging the judge.** `evals/check_judge.py` runs the judge on 12 hand-labelled answers (`evals/judge_calibration.jsonl`)
-  and reports how often it agrees with the labels. They include paraphrases and rounding that must count as correct, a
-  wrong number, a half answer, a one-sided answer to a real disagreement, an accepted false premise, a wrong abstention
-  and invented results. Run this first; if agreement is low, the system scores can't be trusted.
-- **Bias controls:**
-  - temperature 0;
-  - an explicit rubric;
-  - citations stripped before judging;
-  - every verdict lists matched, missing and contradicted points, so it can be audited;
-  - `--judge-model` lets a different model judge than the one answering.
-- **Secondary checks (no LLM):**
-  - verdict-status accuracy;
+- **Primary:** 28 questions with golden answers, judged by an LLM against a six-verdict rubric. The judge is checked on
+  12 hand-labelled answers. Full explanation, worked example and limits:
+  [How we check that the answers are correct](#how-we-check-that-the-answers-are-correct).
+- **Secondary, without an LLM:**
+  - right status (supported / conflicting / insufficient);
   - required facts present;
-  - forbidden claims;
-  - made-up citations;
+  - forbidden claims absent;
+  - no made-up citations;
   - citation precision and recall;
-  - abstention and conflict-detection rates;
-  - whether cited passages support the answer (groundedness judge).
+  - abstention and conflict-detection rates.
+- **Retrieval, measured:** search finds the passage that holds the answer in its top 5 results for 95% of questions.
+- **Software tests (141 offline + 4 live).**
+  - **The agent** is tested with a scripted fake Claude, so every rule in criterion 1 has a test.
+  - **The rest of the pipeline:**
+    - ingestion edge cases;
+    - retrieval;
+    - every tool;
+    - all metrics and the judge;
+    - the collection pipeline against simulated arXiv/OpenAlex;
+    - the literature agent;
+    - the web endpoints.
+  - **The evaluation harness itself** is run end to end with a naive stand-in model, which it correctly scores 0%.
 
-```bash
-python evals/check_judge.py                     # 1. is the judge reliable?
-python evals/run_eval.py --judge                # 2. score the system: report.md starts with the judge's verdicts
-```
-
-**Independent golden answers (optional).** The 28 golden answers were written by the same process that built the
-system. For answers written by other people, `evals/run_sciqa_papers.py --judge` takes SciQA questions that papers can
-answer (e.g. "best model on dataset X"). The system answers them from the papers, with the ORKG tool switched off, and
-the judge compares the answers with ORKG's (see [ORKG and SciQA](#orkg-and-sciqa-what-each-one-is)).
-
-**Tests (141 offline + 4 live).**
-- **The agent:** tested with a scripted fake Claude, so every rule above has a test.
-- **The rest of the pipeline:**
-  - ingestion edge cases;
-  - retrieval;
-  - every tool;
-  - all metrics;
-  - the collection pipeline against simulated arXiv/OpenAlex;
-  - the literature agent;
-  - the web endpoints;
-  - the judge.
-- **The evaluation harness itself:** run end to end with a naive stand-in model, which it correctly scores 0%.
-
-**Status.** Retrieval (recall@5 = 0.95 with BM25) has been measured. The judge-based scores need an API key and have not
-been run yet. → [docs/EVALUATION.md](docs/EVALUATION.md)
+→ [docs/EVALUATION.md](docs/EVALUATION.md)
 
 ### 7. Robustness to missing or conflicting evidence
 
@@ -206,11 +280,15 @@ been run yet. → [docs/EVALUATION.md](docs/EVALUATION.md)
 
 → [docs/DESIGN.md §6](docs/DESIGN.md), `tests/test_agent.py`, `tests/test_outside_corpus.py`
 
-## ORKG and SciQA: what each one is
+## ORKG and SciQA (optional)
 
-This part is **optional**: the main evaluation is golden answers + LLM judge (criterion 6). ORKG and SciQA add a
-structured evidence source for the agent and independently written questions and answers. The two are easy to mix
-up, because they play different roles.
+**You don't need this part to understand or evaluate the system.** The main evaluation is golden answers + LLM judge
+([above](#how-we-check-that-the-answers-are-correct)). ORKG and SciQA are extras with two uses:
+
+1. **A structured evidence source.** ORKG is available to the agent through the `query_scholarly_kg` tool.
+2. **Independent golden answers.** SciQA provides questions and answers written by other people.
+
+The two are easy to mix up, because they play different roles.
 
 | | ORKG | SciQA |
 |---|---|---|
@@ -219,7 +297,22 @@ up, because they play different roles.
 | Role here | The **source of answers**: queries are run against it | The **ground truth**: what generated queries and answers are scored against |
 | Analogy | The library catalogue | An exam about the catalogue, with its answer key |
 
-**How they are used, step by step**
+**Use 1 — independent golden answers for the main system (`run_sciqa_papers.py --judge`)**
+
+1. Take SciQA test questions that papers can answer:
+   - the best model on a dataset;
+   - the top score and its metric;
+   - the metrics used on a dataset;
+   - the models evaluated on a dataset.
+
+   Questions about ORKG's own records are excluded.
+2. The system answers them **from the papers**, with the ORKG tool **switched off**, so it cannot look up the answer
+   key.
+3. The LLM judge compares each answer with ORKG's answer, and fuzzy matching gives a second, rule-based score.
+4. Disagreements are written to `review.md` for a person to decide. ORKG can be incomplete or outdated, so a
+   disagreement is not automatically the system's fault.
+
+**Use 2 — the query-writing experiment (`run_sciqa.py`), step by step**
 
 1. A SciQA test question is taken, e.g. *"Which model has the highest Accuracy on the Story Cloze Test?"*
 2. The 3 most similar SciQA **train** questions are retrieved by text similarity, with their correct queries.
@@ -330,15 +423,21 @@ with full-text PDFs automatically (the ingester keeps the richest record per pap
 ### Evaluate
 
 ```bash
-make eval-retrieval                      # retrieval metrics, no API key (BM25 / dense / hybrid)
-python evals/check_judge.py              # check the LLM judge against 12 hand-labelled answers
-make eval                                # 28 questions: LLM judge vs golden answers (primary) + rule-based checks
-python evals/run_eval.py --ids q08 q09   # a subset
+# main evaluation (needs ANTHROPIC_API_KEY)
+python evals/check_judge.py              # 1. check the LLM judge against 12 hand-labelled answers
+python evals/run_eval.py --judge         # 2. 28 questions: LLM judge vs golden answers (primary) + rule-based checks
+python evals/run_eval.py --judge --ids q08 q09   # a subset
 
-make sciqa-baseline                      # SciQA test, non-LLM nearest-neighbour baseline (offline)
-python evals/run_sciqa.py --generator claude --shots 0 1 3 5            # query-level metrics
-python evals/run_sciqa.py --generator claude --shots 3 --execute         # + answer P/R/F1 on ORKG endpoint
-pytest -m live                           # end-to-end checks against the real API
+# no API key needed
+make eval-retrieval                      # retrieval metrics (BM25 / dense / hybrid)
+make test                                # 141 software tests
+
+# optional extras
+python evals/run_sciqa_papers.py --dry-run           # show SciQA questions + ORKG answers that would be used
+python evals/run_sciqa_papers.py --limit 30 --judge  # answered from papers, judged against ORKG's answers
+make sciqa-baseline                                  # SciQA query writing: non-LLM baseline (offline)
+python evals/run_sciqa.py --generator claude --shots 0 1 3 5     # SciQA query writing with Claude
+pytest -m live                                       # end-to-end checks against the real API
 ```
 
 ## Repository layout
@@ -352,11 +451,19 @@ sciagent/
   agent.py        main Claude tool-use agent with citation / abstention guardrails and tracing
   subagents.py    literature-review agent (search, screen, download, read, extract findings), started via research_topic
   sciqa.py        SciQA NL->SPARQL: example retrieval, kNN baseline, Claude generator, metrics, ORKG execution
-  evaluation.py   retrieval + answer metrics, LLM-as-judge
+  judge.py        LLM judge: system answer vs golden answer, six-verdict rubric
+  evaluation.py   retrieval metrics, rule-based answer checks, groundedness judge
+  sciqa_papers.py SciQA questions answered from papers, compared with ORKG (optional)
   kg/             benchmark download, leakage analysis + rule baseline, PDF report generation
   web/            local web interface (stdlib HTTP server + one HTML page, live tool trace via Server-Sent Events)
-  cli.py          python -m sciagent {collect,analyze,build,search,ask,serve}
-evals/            questions.jsonl (28 designed questions), run_eval.py, run_sciqa.py, results/
+  cli.py          python -m sciagent {collect,analyze,build,search,ask,review,add,serve}
+evals/
+  questions.jsonl         28 questions with golden answers (reference_answer, answer_type) and gold passages
+  run_eval.py             main evaluation: agent answers -> LLM judge vs golden answers + rule-based checks
+  judge_calibration.jsonl 12 hand-labelled answers;  check_judge.py measures the judge against them
+  run_sciqa_papers.py     optional: SciQA questions answered from papers, judged against ORKG
+  run_sciqa.py            optional: SciQA query-writing experiment
+  results/                outputs
 tests/            pytest suite (fake Claude client; live tests marked `live`)
 data/seed_corpus/ seed paper cards
 scripts/          run_examples.py
@@ -368,16 +475,18 @@ docs/             design, evaluation, examples, AI usage
 | Env var | Default | Purpose |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | – | Claude API |
-| `SCIAGENT_MODEL` | `claude-sonnet-5-5` | model for agent, vision, SPARQL generation, judge |
+| `SCIAGENT_MODEL` | `claude-sonnet-5-5` | model for the agents, vision and SPARQL generation |
+| `SCIAGENT_JUDGE_MODEL` | same as `SCIAGENT_MODEL` | model for the LLM judge; a different model reduces self-preference |
 | `SCIAGENT_DATA` | `./data` | data directory |
 | `SCIAGENT_EMBED_MODEL` | unset (LSA) | e.g. `sentence-transformers/all-MiniLM-L6-v2` for neural dense retrieval |
-| `SCIQA_ENDPOINT` | `https://orkg.org/triplestore` | ORKG SPARQL endpoint where generated queries are run (agent ORKG tool and `run_sciqa.py --execute`); see [ORKG and SciQA](#orkg-and-sciqa-what-each-one-is) |
+| `SCIQA_ENDPOINT` | `https://orkg.org/triplestore` | ORKG SPARQL endpoint where generated queries are run (agent ORKG tool and `run_sciqa.py --execute`); see [ORKG and SciQA](#orkg-and-sciqa-optional) |
 
 ## Known limitations
 
-- The agent and LLM evals were **not run in the build sandbox** (no API key there, no access to arXiv/ORKG); they are
-  wired, unit-tested against a scripted fake client, and covered by live tests you can run (`pytest -m live`).
-  Numbers in docs/EVALUATION.md are only those actually computed.
+- The main evaluation (golden answers + LLM judge) was **not run in the build sandbox**, which had no API key and no
+  access to arXiv or ORKG. It is built, unit-tested against a scripted fake client, and run end to end with a stand-in
+  model. Numbers in docs/EVALUATION.md are only those actually computed.
+- The golden answers come from summaries of the papers; check them against the original PDFs.
 - The seed corpus is summaries, not full text. Multimodal handling is exercised on the generated report PDF and test
   PDFs; with `make collect` it runs on real papers.
 - `run_python` runs code in a subprocess, not a security sandbox — fine for a local prototype only.
