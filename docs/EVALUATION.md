@@ -2,10 +2,10 @@
 
 Three layers, from cheapest to most expensive:
 
-1. **Unit / integration tests** (`pytest`, 112 offline + 4 live) — deterministic, no API key.
+1. **Unit / integration tests** (`pytest`, 141 offline + 4 live) — deterministic, no API key.
 2. **Retrieval and data-analysis evaluation** — offline, real numbers below.
-3. **Agent and LLM evaluation** — needs `ANTHROPIC_API_KEY`; harness, metrics and question set are ready
-   (`make eval`, `make sciqa-claude`). **These were not run in the build sandbox (no API key, no ORKG access), so no
+3. **Agent evaluation: golden answers + LLM judge (the primary measure)** — needs `ANTHROPIC_API_KEY`; harness, golden
+   answers, judge and judge calibration set are ready (`python evals/check_judge.py`, `make eval`). **These were not run in the build sandbox (no API key, no ORKG access), so no
    agent/LLM scores are reported here.** Run them and the results land in `evals/results/<timestamp>/report.md`.
 
 ## 1. Test suite design
@@ -29,15 +29,52 @@ image-only "scanned" PDF, a missing PDF, and a duplicate record (card vs PDF).
 | `test_outside_corpus.py` (4) | external search merges arXiv + OpenAlex and ranks the exact title first; **agent that gives up on a paper missing from the corpus is sent back, searches outside, fetches the paper, searches it and answers with valid citations**; abstaining after an outside search is accepted; no outside search required offline or when the user pinned one paper |
 | `test_subagent.py` (5) | `research_topic` offered to the main agent; **main agent starts the literature agent, which searches outside, downloads papers within its cap, reads their result tables and returns findings the main agent cites**; findings citing unread chunks are dropped; download budget enforced; literature agent must search outside before submitting; offline / no-LLM errors |
 | `test_eval_harness.py` (1) | **the agent evaluation runs end to end** (retrieval → agent runs → scores → judge → report) with a naive stand-in model that always says "supported"; the harness gives it 0% pass, 0% abstention and 0% conflict detection, i.e. it does not reward naive answers |
+| `test_judge.py` (6) | judge verdict parsing (incl. messy JSON); judge prompt contains the golden answer and the answer type, citations stripped, temperature 0; score summary; **every eval question has a golden answer**; calibration set covers every verdict; `check_judge.py` reports agreement and lists the judge's mistakes |
+| `test_sciqa_papers.py` (23) | SciQA-from-papers: gold answer extraction, stratified selection excluding ORKG-internal and leaked questions, fuzzy name and number matching (10 + 7 cases), scoring per question type, review sheet, **ORKG tool disabled in the agent**, runner end to end on a copy of the corpus |
 | `test_live.py` (4, `-m live`) | real API: cited supported answer, conflict surfaced, abstention, SciQA 3-shot exact match |
 
-Result in the build sandbox: **112 passed, 4 skipped (live)** in ~17 s.
+Result in the build sandbox: **141 passed, 4 skipped (live)** in ~20 s.
 
 Two real bugs were caught by tests while building: whole-table extraction scrambling decimals, and a test fixture
 whose leakage rate (33% held out) was unrealistic so the 0.9-confidence rule miner correctly refused to mine the rule —
 the fix was to the fixture (5% held out, like WN18), and a negative test was added.
 
-## 2. Agent evaluation set (`evals/questions.jsonl`, 28 questions)
+## 2. Primary measure: golden answers + LLM judge
+
+Every question in `evals/questions.jsonl` has a **golden answer** (`reference_answer`) written from the source texts, and
+an `answer_type`:
+- **fact:** key points that must be present;
+- **abstain:** the correct answer is "not in the papers";
+- **open:** criteria, used for the literature-search question.
+
+`run_eval.py --judge` sends the question, the golden answer and the system's answer (citation markers removed) to an LLM
+judge (`sciagent/judge.py`, temperature 0, fixed rubric). The judge returns one of six verdicts:
+
+| Verdict | Score |
+|---|---|
+| correct | 1 |
+| partially correct | 0.5 |
+| incorrect | 0 |
+| correct abstention | 1 |
+| wrong abstention | 0 |
+| hallucinated | 0 |
+
+It also lists matched, missing and contradicted points and gives a short explanation. The report starts with the mean
+score, the verdict counts, a per-category score and a per-question table, so each verdict can be audited.
+
+**Judge reliability.** `evals/check_judge.py` grades 12 hand-labelled answers covering every verdict type: paraphrase
+and rounding (must be correct), a wrong number, half an answer, a one-sided answer to a real disagreement, an accepted
+false premise, a wrong abstention, a correct abstention and invented results. It reports two numbers:
+- **exact agreement:** same verdict as the label;
+- **pass/fail agreement:** same side of pass/fail.
+
+Run it before trusting system scores. Using a different judge model (`--judge-model`) reduces self-preference bias.
+
+**Independent golden answers (optional).** `run_sciqa_papers.py --judge` uses SciQA questions that papers can answer.
+ORKG's answers serve as golden answers written by other people. The system answers from papers with the ORKG tool
+disabled. A disagreement may also mean that ORKG is incomplete, so disagreements go to `review.md` for a human verdict.
+
+## 3. The question set (`evals/questions.jsonl`, 28 questions)
 
 Designed to cover each robustness behaviour, not just accuracy:
 
@@ -65,9 +102,9 @@ use, tool calls, tokens, latency; a strict `pass` = right status ∧ all facts �
 Aggregates include **abstention accuracy** and **conflict detection** rates; `--judge` adds LLM-as-judge groundedness
 of each answer against the text of the chunks it cites.
 
-## 3. Results that were computed
+## 4. Results that were computed
 
-### 3.1 Retrieval (21 questions with gold evidence, 11-paper corpus, 45 chunks)
+### 4.1 Retrieval (21 questions with gold evidence, 11-paper corpus, 45 chunks)
 
 | retriever | recall@1 | recall@3 | recall@5 | all-gold@5 | MRR | nDCG@10 |
 |---|---|---|---|---|---|---|
@@ -82,7 +119,7 @@ question q08 ("Can TransE model symmetric relations?") retrieves the loss-aware 
 relation-pattern chunk in the top 4 — the agent has to issue a second query, which is exactly why it is agentic
 rather than single-shot. Next step: neural encoder (`SCIAGENT_EMBED_MODEL`) and re-measure before changing the default.
 
-### 3.2 SciQA NL→SPARQL — non-LLM baseline (no training)
+### 4.2 SciQA NL→SPARQL — non-LLM baseline (no training)
 
 *ORKG* is the knowledge graph (the facts queries run against); *SciQA* is the question bank built on it, and its
 correct queries and answers are the ground truth. Query-level metrics compare against SciQA's correct query and need
@@ -112,7 +149,7 @@ Takeaways that shape the LLM experiments:
 - 3 shots cover the right template 94% of the time; 5 shots add little coverage but more distractors — the
   0/1/3/5-shot sweep (`make sciqa-claude`) tests this directly.
 
-### 3.3 Benchmark leakage analysis (real data, no training)
+### 4.3 Benchmark leakage analysis (real data, no training)
 
 | dataset | train | test | test triples recoverable by a mined rule | rule-only filtered MRR | Hits@10 |
 |---|---|---|---|---|---|
@@ -124,12 +161,14 @@ A rule-only model with no embeddings reaches 0.93 MRR on WN18, matching the argu
 measures inverse-relation lookup; WN18RR's remaining 34% come from symmetric relations (derivationally related form,
 verb group, similar to).
 
-## 4. How to run the LLM evaluations
+## 5. How to run the LLM evaluations
 
 ```bash
 export ANTHROPIC_API_KEY=...
 make eval                                                     # 28 agent questions + judge
-python evals/run_sciqa.py --generator claude --shots 0 1 3 5  # SciQA query metrics, no training
+python evals/check_judge.py                                   # judge reliability on hand-labelled answers
+python evals/run_sciqa_papers.py --limit 30 --judge            # optional: independent golden answers from ORKG
+python evals/run_sciqa.py --generator claude --shots 0 1 3 5  # optional: SciQA query metrics, no training
 python evals/run_sciqa.py --generator claude --shots 3 --execute --limit 120   # + answer F1 on ORKG
 pytest -m live
 ```

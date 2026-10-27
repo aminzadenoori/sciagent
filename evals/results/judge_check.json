@@ -1,0 +1,17 @@
+{
+ "judge_model": "m",
+ "n": 12,
+ "exact_agreement": 0.917,
+ "pass_fail_agreement": 0.917,
+ "disagreements": [
+  {
+   "id": "c02",
+   "expected": "incorrect",
+   "got": "correct",
+   "exact": false,
+   "same_side": false,
+   "note": "wrong number",
+   "explanation": null
+  }
+ ]
+}

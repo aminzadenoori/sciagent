@@ -3,6 +3,7 @@
   python evals/run_sciqa_papers.py --limit 30
   python evals/run_sciqa_papers.py --limit 8 --templates T05 T04      # cheaper first look
   python evals/run_sciqa_papers.py --dry-run                            # show the selected questions only
+  python evals/run_sciqa_papers.py --limit 30 --judge                   # + LLM judge against ORKG's answers
 
 What happens for each question:
   1. the main agent answers it as a normal user question, from papers (corpus + literature agent);
@@ -53,6 +54,8 @@ def main():
     ap.add_argument("--model", default=os.environ.get("SCIAGENT_MODEL", "claude-sonnet-5-5"))
     ap.add_argument("--max-steps", type=int, default=14)
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--judge", action="store_true", help="also grade each answer with the LLM judge against ORKG's answer")
+    ap.add_argument("--judge-model", default=os.environ.get("SCIAGENT_JUDGE_MODEL"))
     ap.add_argument("--out", default=str(ROOT / "evals" / "results" / ("sciqa-papers-" + time.strftime("%Y%m%d-%H%M%S"))))
     a = ap.parse_args()
 
@@ -81,12 +84,21 @@ def main():
             print(f"[{i}/{len(items)}] {it['template']} {it['question']}")
             r = agent.run(FRAMING + it["question"]).to_dict()
             s = score(it, r)
+            if a.judge:
+                from sciagent.judge import judge
+                ref = (f"According to ORKG (SciQA gold answer): {gold_text(it)}. Treat this as the golden answer; an "
+                       f"answer naming it (in any wording) is correct.")
+                s["reference_judge"] = judge(agent.client, a.judge_model or a.model, it["question"], ref, r["answer"],
+                                             "fact", r.get("evidence_status"))
             results.append(r)
             scores.append(s)
             f.write(json.dumps({"item": it, "result": r, "score": s}) + "\n")
             f.flush()
             print(f"      ORKG: {gold_text(it)}\n      -> {s['outcome']} (score {s['score']}, status {r['evidence_status']})")
     agg = aggregate(scores)
+    if a.judge:
+        from sciagent.judge import summarize
+        agg["golden_answer_judge"] = summarize([s["reference_judge"] for s in scores if s.get("reference_judge")])
     (out / "scores.json").write_text(json.dumps({"aggregate": agg, "per_question": scores}, indent=1))
     (out / "review.md").write_text(review_sheet(items, results, scores))
     lines = ["# SciQA answered from papers vs ORKG\n", f"Model `{a.model}`, {len(items)} questions, ORKG tool disabled.\n",

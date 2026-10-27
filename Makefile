@@ -1,6 +1,6 @@
 PY ?= python
 
-.PHONY: install data build serve test eval-retrieval eval sciqa-baseline sciqa-claude examples all
+.PHONY: install data build serve test eval-retrieval judge-check eval sciqa-baseline sciqa-claude examples all
 
 install:
 	$(PY) -m pip install -r requirements.txt
@@ -23,6 +23,9 @@ test:
 
 eval-retrieval:
 	$(PY) evals/run_eval.py --retrieval-only
+
+judge-check:
+	$(PY) evals/check_judge.py
 
 eval:
 	$(PY) evals/run_eval.py --judge

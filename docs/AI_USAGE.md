@@ -22,7 +22,9 @@ what was verified rather than trusted.
    interface; asking about a paper that is not in the corpus (upload / arXiv id, then automatic outside search and
    download); stronger automated collection (topic-only mode, relevance ranking, incremental runs, audit report);
    and a separate literature-review agent the main agent can start for topic questions such as "highest F1 for
-   requirements classification with LLMs on PROMISE". Each change came with tests and was checked in a browser via
+   requirements classification with LLMs on PROMISE". Finally the user questioned whether SciQA was the right way to
+   assess correctness and asked for golden answers judged by an LLM instead; that became the primary measure, with
+   SciQA kept as an optional source of independent golden answers. Each change came with tests and was checked in a browser via
    screenshots before delivery.
 5. **Seed corpus.** Because PDFs could not be downloaded in the sandbox, the agent read paper pages through its web
    tool and wrote short structured summaries ("cards") in its own words. These are labelled as such, used only as a
@@ -31,7 +33,7 @@ what was verified rather than trusted.
 
 ## What was verified, not trusted
 
-- **Tests before claims.** 112 offline tests now. Real bugs they or screenshot checks surfaced: table decimals
+- **Tests before claims.** 141 offline tests now. Real bugs they or screenshot checks surfaced: table decimals
   scrambled by whole-table extraction ("0.27" → "027 ."); an unrealistic test fixture for rule mining; the PDF
   downloader bound at import time so a test stand-in was silently ignored; a CSS rule that displayed a hidden
   "answering only from" bar; "1 papers"-style labels.

@@ -25,7 +25,7 @@ the train split is only a pool of retrieved few-shot examples. See
 
 ## The seven review criteria: what was done and where to look
 
-**Status in one line:** everything below is implemented and covered by 112 offline tests. Retrieval, the SciQA
+**Status in one line:** everything below is implemented and covered by 141 offline tests. Retrieval, the SciQA
 baseline and the benchmark-leakage analysis were run on real data. The LLM-based evaluations (agent answers, Claude
 SciQA) are built and wired up but **were not run here** (no API key in the build sandbox); `make eval` and
 `make sciqa-claude` produce them.
@@ -81,7 +81,7 @@ Numbers that could not be computed are not reported. → [docs/AI_USAGE.md](docs
 - **Re-chunking-proof gold labels.** Gold evidence is stored as (paper, phrase), so it survives re-chunking, and a
   check verifies every gold item exists before each run.
 
-→ [docs/EVALUATION.md §3.1](docs/EVALUATION.md), `sciagent/index.py`, `sciagent/ingest.py`
+→ [docs/EVALUATION.md §4.1](docs/EVALUATION.md), `sciagent/index.py`, `sciagent/ingest.py`
 
 ### 4. Multimodal handling
 
@@ -110,34 +110,86 @@ Limits: there is no OCR for scanned PDFs, and real-paper figures only arrive aft
 - **Comparability.** The literature agent records dataset version, task variant, metric averaging and training
   regime, so incomparable scores are not ranked against each other.
 
-→ `sciagent/kg/analysis.py`, `sciagent/sciqa.py`, [docs/EVALUATION.md §3.2–3.3](docs/EVALUATION.md)
+→ `sciagent/kg/analysis.py`, `sciagent/sciqa.py`, [docs/EVALUATION.md §4.2–4.3](docs/EVALUATION.md)
 
 ### 6. Evaluation and testing
 
-- **Offline tests (112):** the agent is tested with a scripted fake Claude, so every rule above has a test. Also
-  covered:
+**Main measure: golden answers + LLM judge.** Each of 28 questions has a golden answer written in advance. The system
+answers each question, and an LLM judge compares its answer with the golden answer:
+
+```
+question ──► agentic system ──► system answer ─┐
+                                               ├──► LLM judge ──► verdict + matched / missing / contradicted points
+golden answer (written in advance) ────────────┘
+```
+
+| Verdict | Score | Meaning |
+|---|---|---|
+| correct | 1 | all key points of the golden answer, nothing contradicting it |
+| partially correct | 0.5 | some key points, none contradicted (e.g. only one side of a real disagreement) |
+| incorrect | 0 | contradicts the golden answer or misses its main point |
+| correct abstention | 1 | the answer is not in the papers, and the system says so |
+| wrong abstention | 0 | the system gave up although the answer exists |
+| hallucinated | 0 | the answer is not in the papers, but the system states specific values |
+
+- **Golden answers** (`evals/questions.jsonl`, field `reference_answer`): taken from the source texts, with a type
+  telling the judge what correct means:
+  - **fact:** the key points must be present;
+  - **abstain:** the right answer is "not in the papers";
+  - **open:** criteria for the literature-search question, where the true best value depends on what is found.
+- **The 28 questions cover every kind of difficulty:**
+  - facts and exact numbers;
+  - a table, a figure and an analysis;
+  - multi-hop reasoning;
+  - real disagreements;
+  - unanswerable questions and a false premise;
+  - incomparable numbers;
+  - a tool failure;
+  - a literature search.
+- **Judging the judge.** `evals/check_judge.py` runs the judge on 12 hand-labelled answers (`evals/judge_calibration.jsonl`)
+  and reports how often it agrees with the labels. They include paraphrases and rounding that must count as correct, a
+  wrong number, a half answer, a one-sided answer to a real disagreement, an accepted false premise, a wrong abstention
+  and invented results. Run this first; if agreement is low, the system scores can't be trusted.
+- **Bias controls:**
+  - temperature 0;
+  - an explicit rubric;
+  - citations stripped before judging;
+  - every verdict lists matched, missing and contradicted points, so it can be audited;
+  - `--judge-model` lets a different model judge than the one answering.
+- **Secondary checks (no LLM):**
+  - verdict-status accuracy;
+  - required facts present;
+  - forbidden claims;
+  - made-up citations;
+  - citation precision and recall;
+  - abstention and conflict-detection rates;
+  - whether cited passages support the answer (groundedness judge).
+
+```bash
+python evals/check_judge.py                     # 1. is the judge reliable?
+python evals/run_eval.py --judge                # 2. score the system: report.md starts with the judge's verdicts
+```
+
+**Independent golden answers (optional).** The 28 golden answers were written by the same process that built the
+system. For answers written by other people, `evals/run_sciqa_papers.py --judge` takes SciQA questions that papers can
+answer (e.g. "best model on dataset X"). The system answers them from the papers, with the ORKG tool switched off, and
+the judge compares the answers with ORKG's (see [ORKG and SciQA](#orkg-and-sciqa-what-each-one-is)).
+
+**Tests (141 offline + 4 live).**
+- **The agent:** tested with a scripted fake Claude, so every rule above has a test.
+- **The rest of the pipeline:**
   - ingestion edge cases;
   - retrieval;
-  - each tool;
-  - the metrics;
-  - the full collection pipeline against simulated arXiv/OpenAlex;
+  - every tool;
+  - all metrics;
+  - the collection pipeline against simulated arXiv/OpenAlex;
   - the literature agent;
   - the web endpoints;
-  - the evaluation harness itself, run end to end with a naive stand-in model that it correctly scores 0%.
-- **Live tests (4):** these call the real API (`pytest -m live`).
-- **Agent evaluation set (28 questions)**, covering every kind of difficulty:
-  - factual and numeric questions;
-  - table, figure and analysis questions;
-  - multi-hop questions;
-  - real conflicts;
-  - unanswerable questions and a false premise;
-  - a tool failure, a structured KG query and a literature review.
+  - the judge.
+- **The evaluation harness itself:** run end to end with a naive stand-in model, which it correctly scores 0%.
 
-  Metrics: status accuracy, required-fact recall, trap phrases, citation precision and recall, fabricated citations,
-  abstention and conflict-detection rates, and optional LLM-as-judge groundedness.
-- **SciQA runner:** 0/1/3/5-shot, scored by query metrics and by executing answers on ORKG.
-
-→ [docs/EVALUATION.md](docs/EVALUATION.md)
+**Status.** Retrieval (recall@5 = 0.95 with BM25) has been measured. The judge-based scores need an API key and have not
+been run yet. → [docs/EVALUATION.md](docs/EVALUATION.md)
 
 ### 7. Robustness to missing or conflicting evidence
 
@@ -156,7 +208,9 @@ Limits: there is no OCR for scanned PDFs, and real-paper figures only arrive aft
 
 ## ORKG and SciQA: what each one is
 
-These two are easy to mix up. They play different roles.
+This part is **optional**: the main evaluation is golden answers + LLM judge (criterion 6). ORKG and SciQA add a
+structured evidence source for the agent and independently written questions and answers. The two are easy to mix
+up, because they play different roles.
 
 | | ORKG | SciQA |
 |---|---|---|
@@ -213,7 +267,7 @@ export ANTHROPIC_API_KEY=sk-ant-...          # only needed for the agent / LLM e
 export SCIAGENT_MODEL=claude-sonnet-5-5      # optional; any Claude model with tool use + vision
 
 make build        # download WN18/WN18RR/FB15k-237, run leakage analysis -> report PDF, ingest + index corpus
-make test         # 112 offline tests (fake Claude client), 4 live tests skipped without an API key
+make test         # 141 offline tests (fake Claude client), 4 live tests skipped without an API key
 
 python -m sciagent serve                     # web interface on http://localhost:8000
 python -m sciagent ask "Can TransE model symmetric relations?" -v
@@ -277,7 +331,8 @@ with full-text PDFs automatically (the ingester keeps the richest record per pap
 
 ```bash
 make eval-retrieval                      # retrieval metrics, no API key (BM25 / dense / hybrid)
-make eval                                # full agent eval on 28 questions + LLM-as-judge groundedness
+python evals/check_judge.py              # check the LLM judge against 12 hand-labelled answers
+make eval                                # 28 questions: LLM judge vs golden answers (primary) + rule-based checks
 python evals/run_eval.py --ids q08 q09   # a subset
 
 make sciqa-baseline                      # SciQA test, non-LLM nearest-neighbour baseline (offline)

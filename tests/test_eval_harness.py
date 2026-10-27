@@ -19,7 +19,9 @@ class NaiveModel:
 
     def create(self, **kw):
         msgs = kw["messages"]
-        if "tools" not in kw:  # LLM-as-judge call
+        if "tools" not in kw:  # judge calls
+            if "golden reference" in str(kw.get("system", "")):
+                return response(text('{"verdict": "incorrect", "missing_points": ["main point"]}'))
             return response(text('{"claims": 2, "supported": 1, "unsupported_examples": []}'))
         if len(msgs) == 1:
             return response(tool_use("search_papers", {"query": msgs[0]["content"][:200]}, id="s"))
@@ -38,9 +40,11 @@ def test_run_eval_end_to_end_with_naive_model(built, tmp_path, monkeypatch):
     qs = tmp_path / "q.jsonl"
     rows = [
         {"id": "c1", "category": "conflict", "question": "Does ToyE beat the baseline?",
-         "gold": [{"paper_id": "toy:good", "contains": "0.427"}], "expected_status": ["conflicting"], "must_include": [["0.427"]]},
+         "gold": [{"paper_id": "toy:good", "contains": "0.427"}], "expected_status": ["conflicting"], "must_include": [["0.427"]],
+         "answer_type": "fact", "reference_answer": "Sources disagree about ToyE vs the baseline."},
         {"id": "u1", "category": "unanswerable", "question": "What MRR does CardNet get on YAGO3-10?",
-         "gold": [], "expected_status": ["insufficient"], "must_include": []},
+         "gold": [], "expected_status": ["insufficient"], "must_include": [],
+         "answer_type": "abstain", "reference_answer": "Not reported; say so without a number."},
     ]
     qs.write_text("".join(json.dumps(r) + "\n" for r in rows))
     out = tmp_path / "out"
@@ -53,3 +57,6 @@ def test_run_eval_end_to_end_with_naive_model(built, tmp_path, monkeypatch):
     assert agg["pass_rate"] == 0.0                      # naive "always supported" earns nothing here
     assert agg["abstention_accuracy"] == 0.0 and agg["conflict_detection"] == 0.0
     assert agg["judge_groundedness"] == 0.5
+    g = agg["golden_answer_judge"]
+    assert g["n"] == 2 and g["mean_score"] == 0.0 and g["verdicts"] == {"incorrect": 2}
+    assert "Primary score: LLM judge vs golden answers" in (out / "report.md").read_text()
