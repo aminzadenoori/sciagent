@@ -10,11 +10,14 @@ reported as such rather than smoothed over.
 knowledge graphs + LLMs for factual reliability — including a real published disagreement (RotatE vs.
 *Loss-Aware Pattern Inference* on whether TransE can model symmetric relations).
 
-**Benchmark testing** follows LLM-based NL→SPARQL scientific QA on **SciQA** (official train/valid/test split),
-**without any training or fine-tuning**: the train split is only a pool of retrieved few-shot examples.
+**Benchmark testing** follows LLM-based NL→SPARQL scientific QA on **SciQA**, a question bank with correct queries and
+answers over the **ORKG** knowledge graph (official train/valid/test split). It uses **no training or fine-tuning**:
+the train split is only a pool of retrieved few-shot examples. See
+[ORKG and SciQA](#orkg-and-sciqa-what-each-one-is).
 
 | Doc | What's in it |
 |---|---|
+| [ORKG and SciQA explained](#orkg-and-sciqa-what-each-one-is) | The knowledge graph vs. the question bank with the ground truth |
 | [docs/DESIGN.md](docs/DESIGN.md) | Architecture, design choices, how each review criterion is addressed |
 | [docs/EVALUATION.md](docs/EVALUATION.md) | Test suite, eval harness, results (retrieval, SciQA, leakage analysis) |
 | [docs/EXAMPLES.md](docs/EXAMPLES.md) | Example questions, tool traces and outputs |
@@ -150,6 +153,56 @@ Limits: there is no OCR for scanned PDFs, and real-paper figures only arrive aft
 
 → [docs/DESIGN.md §6](docs/DESIGN.md), `tests/test_agent.py`, `tests/test_outside_corpus.py`
 
+## ORKG and SciQA: what each one is
+
+These two are easy to mix up. They play different roles.
+
+| | ORKG | SciQA |
+|---|---|---|
+| What it is | The **Open Research Knowledge Graph**: a database of research results stored as structured facts (paper → contribution → benchmark → dataset → metric → score → model) | A **question bank built on top of ORKG**: 2,565 questions (1,795 train / 257 valid / 513 test) |
+| What it contains | Facts. No questions. | For each question: the English question, the **correct SPARQL query**, and the **correct answer** (the result of that query on ORKG in 2023) |
+| Role here | The **source of answers**: queries are run against it | The **ground truth**: what generated queries and answers are scored against |
+| Analogy | The library catalogue | An exam about the catalogue, with its answer key |
+
+**How they are used, step by step**
+
+1. A SciQA test question is taken, e.g. *"Which model has the highest Accuracy on the Story Cloze Test?"*
+2. The 3 most similar SciQA **train** questions are retrieved by text similarity, with their correct queries.
+   Nothing is trained: they are only shown to Claude as examples.
+3. Claude writes a SPARQL query for the test question.
+4. **Query-level score:** the query is compared with SciQA's correct query (BLEU, ROUGE, exact match). This needs no
+   ORKG access.
+5. **Answer-level score (optional, `--execute`):** the query is run on ORKG, and its results are compared with
+   SciQA's correct answer (precision / recall / F1). This is the only step that contacts ORKG.
+
+In the agent the same mechanism is the `query_scholarly_kg` tool. Claude uses it for structured questions (best score
+on a benchmark, models evaluated on a dataset), and the ORKG result is returned as citable evidence.
+
+**Where queries are sent: `SCIQA_ENDPOINT`**
+
+`SCIQA_ENDPOINT` is the web address of the ORKG SPARQL endpoint, used only in steps that *run* a query (step 5 and
+the agent tool). It defaults to `https://orkg.org/triplestore`. Point it elsewhere to use a stable snapshot or a local
+copy; the 2023 challenge used `https://ltdemos.informatik.uni-hamburg.de/orkg/sparql`. Neither address could be
+verified from the build sandbox, so test the endpoint first:
+
+```bash
+python -c "from sciagent.sciqa import execute; print(execute('SELECT ?p WHERE { ?p a orkgc:Paper } LIMIT 3'))"
+# a list of values = endpoint works;  None = unreachable or not a SPARQL endpoint
+```
+
+**Caveats**
+
+- **Snapshot drift.** SciQA's correct answers were taken from ORKG in 2023, and ORKG has changed since. Answer-level
+  scores therefore partly measure that drift, so query-level scores are the more stable comparison.
+- **Coverage.** ORKG only knows what people entered. An empty result can mean a wrong query *or* missing data, and the
+  agent says so. ORKG is ground truth for "what ORKG records", not for "what the literature says".
+- **Template questions are easy.** A no-LLM baseline that copies the nearest train query already gets 74.9% exact
+  match on template-generated questions, and 0% on the 21 hand-written ones. The hand-written questions are the real
+  test.
+- **New ground truth.** You can make more, the way SciQA's template questions were made: fill question patterns with
+  datasets and metrics from ORKG and record ORKG's answers. That is useful, e.g., as reference values for the
+  literature agent's "best F1 on dataset X" answers when ORKG covers that dataset.
+
 ## Quick start
 
 ```bash
@@ -262,7 +315,7 @@ docs/             design, evaluation, examples, AI usage
 | `SCIAGENT_MODEL` | `claude-sonnet-5-5` | model for agent, vision, SPARQL generation, judge |
 | `SCIAGENT_DATA` | `./data` | data directory |
 | `SCIAGENT_EMBED_MODEL` | unset (LSA) | e.g. `sentence-transformers/all-MiniLM-L6-v2` for neural dense retrieval |
-| `SCIQA_ENDPOINT` | `https://orkg.org/triplestore` | ORKG SPARQL endpoint for execution-based metrics |
+| `SCIQA_ENDPOINT` | `https://orkg.org/triplestore` | ORKG SPARQL endpoint where generated queries are run (agent ORKG tool and `run_sciqa.py --execute`); see [ORKG and SciQA](#orkg-and-sciqa-what-each-one-is) |
 
 ## Known limitations
 

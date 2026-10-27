@@ -83,6 +83,11 @@ rather than single-shot. Next step: neural encoder (`SCIAGENT_EMBED_MODEL`) and 
 
 ### 3.2 SciQA NL→SPARQL — non-LLM baseline (no training)
 
+*ORKG* is the knowledge graph (the facts queries run against); *SciQA* is the question bank built on it, and its
+correct queries and answers are the ground truth. Query-level metrics compare against SciQA's correct query and need
+no ORKG access; answer-level F1 runs the query on ORKG (`SCIQA_ENDPOINT`) and compares with SciQA's 2023 answers.
+See the README section "ORKG and SciQA: what each one is".
+
 Official split; 7 test / 3 valid items that duplicate a train question or query were **excluded** (leakage audit).
 
 | split | subset | n | BLEU-4 | ROUGE-1 | ROUGE-2 | ROUGE-L | exact match | literal F1 |
